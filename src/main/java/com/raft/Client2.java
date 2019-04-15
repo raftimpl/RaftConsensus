@@ -10,6 +10,8 @@ import com.raft.rpc.RPCClient;
  */
 public class Client2 {
     public static void main(String[] args) {
+
+
         RPCClient client = new RPCClient();
         Request<Command> request = new Request<>();
         Command c1 = new Command("a", Command.GET);
