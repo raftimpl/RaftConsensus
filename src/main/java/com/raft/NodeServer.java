@@ -123,12 +123,14 @@ public class NodeServer {
         threadPool = Executors.newScheduledThreadPool(3);
 
         // 启动定时周期性选举任务
-        threadPool.scheduleAtFixedRate(new ElectionTask(), 10000, 3000, TimeUnit.MILLISECONDS); // 延迟30s执行，每隔3s 检查是否需要重新选举
+
+        threadPool.scheduleAtFixedRate(new ElectionTask(), 15000, 3000, TimeUnit.MILLISECONDS); // 延迟30s执行，每隔3s 检查是否需要重新选举
         // 启动定时周期性心跳任务
-        threadPool.scheduleAtFixedRate(new HeartbeatTask(), 10000, 1000, TimeUnit.MILLISECONDS); // 延迟 30s 执行，每隔 1s 检查是否需要发送心跳
+        threadPool.scheduleAtFixedRate(new HeartbeatTask(), 15000, 1000, TimeUnit.MILLISECONDS); // 延迟 30s 执行，每隔 1s 检查是否需要发送心跳
 
         // 启动输出任务, 每隔 3s 打印当前节点存储的日志项
-        threadPool.scheduleAtFixedRate(new PrintTask(), 15000, 10000, TimeUnit.MILLISECONDS);
+        threadPool.scheduleAtFixedRate(new PrintTask(), 20000, 10000, TimeUnit.MILLISECONDS);
+
 
         // 获取当前任期
         LogEntry entry = logModule.getLast();
@@ -297,6 +299,17 @@ public class NodeServer {
             if (currentTerm != reqObj.getTerm()) {
                 currentTerm = reqObj.getTerm();
             }
+
+            // 检验当前日志是否缺少 (重启后的节点很有可能缺少部分日志项)
+            long prevLogIndex = reqObj.getPrevLogIndex();
+            if (prevLogIndex != -1) { // 说明leader 中有日志
+                LogEntry entry = logModule.read(prevLogIndex);
+                if (entry == null || entry.getTerm() != reqObj.getPrevLogTerm()) {
+                    // 返回给心跳一个标记，提醒让leader 启动发送日志的过程（只用发送给当前节点即可）
+                    return AppendEntryResult.yes(Integer.MIN_VALUE); // term =  MIN_VALUE 为特殊标记
+                }
+            }
+
         } finally {
             lock.unlock();
         }
@@ -322,6 +335,13 @@ public class NodeServer {
                 param.setLeaderId(peerSet.getSelf().getAddr());
                 param.setTerm(currentTerm);
 
+                // 这里的 prevLogIndex/term 就设置成 lastEntry 的index/term, 不需要设置成 nextIndex 的 prevIndex, 因为发送日志不走这, nextIndex-- 不会在这起到作用
+                LogEntry lastEntry = logModule.getLast();
+                if (lastEntry != null) {
+                    param.setPrevLogIndex(lastEntry.getIndex());
+                    param.setPrevLogTerm(lastEntry.getTerm());
+                }
+
                 List<Peer> otherPeers = peerSet.getOtherPeers();
 //                System.out.println("otherpeers:" + otherPeers);
 
@@ -345,7 +365,14 @@ public class NodeServer {
                                 voteFor = null;
                                 System.out.println(request.getDesc() + " =>心跳失败");
                             } // else 不处理
-                            else {
+                            else if (resp.getTerm() == Integer.MIN_VALUE) { // 说明目标节点缺少部分日志
+                                System.out.println("发现目标节点缺少部分日志");
+                                if (sendAppendEntry(peer, logModule.getLastIndex())) {
+                                    System.out.println("更新成功");
+                                } else {
+                                    System.out.println("更新失败");
+                                }
+                            } else {
 //                                System.out.println(request.getDesc() + " =>心跳成功");
                             }
                         }
@@ -356,8 +383,8 @@ public class NodeServer {
                 System.out.println("heartbeat 出现异常");
             }
         }
-
     }
+
 
     public Response handleGetRequest(Request<Command> request) {
         String key = request.getReqObj().getKey();
@@ -401,69 +428,7 @@ public class NodeServer {
             Future<Boolean> res = threadPool.submit(new Callable<Boolean>() {
                 @Override
                 public Boolean call() throws Exception {
-
-                    long begin = System.currentTimeMillis(), end = begin;
-                    while (end - begin < 20 * 1000L) {
-                        AppendEntryParam param = new AppendEntryParam();
-                        param.setTerm(currentTerm);
-                        param.setLeaderId(peerSet.getSelf().getAddr());
-                        param.setLeaderCommitIndex(commitIndex);
-
-                        // 将[nextIndex, newEntryIndex] 日志全部发送出去
-                        List<LogEntry> entryList = new ArrayList<>();
-                        Long nextIndex = nextIndexMap.get(p);
-                        if (entry.getIndex() >= nextIndex) {
-                            for (long i = nextIndex; i <= entry.getIndex(); i++) {
-                                LogEntry e = logModule.read(i);
-                                if (e != null) {
-                                    entryList.add(e);
-                                }
-                            }
-                        } else {
-                            entryList.add(entry);
-                        }
-                        param.setEntries(entryList);
-
-                        // 注意: prevLogIndex prevLogTerm 表示的是即将发送的所有日志项的 前一个日志
-                        LogEntry lastEntry = logModule.read(nextIndex - 1); // 因为当前日志中已经添加了 新的日志项
-                        if (lastEntry != null) {
-                            param.setPrevLogTerm(lastEntry.getTerm());
-                            param.setPrevLogIndex(lastEntry.getIndex());
-                        }
-                        Request<AppendEntryParam> req = new Request<>();
-                        req.setUrl(p.getAddr());
-                        req.setReqObj(param);
-                        req.setType(Request.RequestType.APPEND_ENTRY);
-                        req.setDesc("向" + p.getAddr() + "发送" + entry);
-                        AppendEntryResult tmpRes = (AppendEntryResult) rpcClient.send(req); // 阻塞式发送 appendEntryRPC
-                        if (tmpRes != null) {
-                            if (tmpRes.isSuccess()) { // 对方复制成功
-                                nextIndexMap.put(p, entry.getIndex() + 1);
-                                matchIndexMap.put(p, entry.getIndex());
-                                System.out.println(p.getAddr() + " 复制成功");
-                                return true;
-                            } else { // 复制失败
-                                if (tmpRes.getTerm() > currentTerm) {   // 对方任期比自己大
-                                    currentTerm = tmpRes.getTerm();
-                                    status = NodeStatus.FOLLOWER;
-                                    return false;
-                                } else {   // 对方任期不比自己大，但失败了, 说明日志不匹配
-//                                System.out.println("removeFromIndex:" + nextIndex);
-                                    System.out.println("下一次发送给" + p.getAddr() + "的是:" + (nextIndex - 1) + "及之后的数据");
-//                                logModule.removeFromIndex(nextIndex);
-                                    nextIndexMap.put(p, nextIndex - 1);
-                                    // 继续尝试
-                                }
-
-                            }
-                            end = System.currentTimeMillis();
-                        } else {
-                            // tmpRes==null 说明对方宕机，连接失败, 不要进行不必要的尝试
-                            return false;
-                        }
-                    }
-                    System.out.println(p.getAddr() + " 复制失败");
-                    return false;
+                    return sendAppendEntry(p, entry.getIndex());
                 }
             });
 
@@ -523,6 +488,73 @@ public class NodeServer {
             return ClientResp.no("提交失败");
         }
     }
+
+    public boolean sendAppendEntry(Peer p, long lastIndex) {
+
+        // 参数 peer , lastIndex,
+        long begin = System.currentTimeMillis(), end = begin;
+        while (end - begin < 20 * 1000L) {
+            AppendEntryParam param = new AppendEntryParam();
+            param.setTerm(currentTerm);
+            param.setLeaderId(peerSet.getSelf().getAddr());
+            param.setLeaderCommitIndex(commitIndex);
+
+            // 将[nextIndex, newEntryIndex] 日志全部发送出去
+            List<LogEntry> entryList = new ArrayList<>();
+            Long nextIndex = nextIndexMap.get(p);
+//          if (entry.getIndex() >= nextIndex) {
+            for (long i = nextIndex; i <= lastIndex; i++) {
+                LogEntry e = logModule.read(i);
+                if (e != null) {
+                    entryList.add(e);
+                }
+            }
+//          } else {
+//                entryList.add(entry);
+//          }
+            param.setEntries(entryList);
+
+            // 注意: prevLogIndex prevLogTerm 表示的是即将发送的所有日志项的 前一个日志
+            LogEntry lastEntry = logModule.read(nextIndex - 1); // 因为当前日志中已经添加了 新的日志项
+            if (lastEntry != null) {
+                param.setPrevLogTerm(lastEntry.getTerm());
+                param.setPrevLogIndex(lastEntry.getIndex());
+            }
+            Request<AppendEntryParam> req = new Request<>();
+            req.setUrl(p.getAddr());
+            req.setReqObj(param);
+            req.setType(Request.RequestType.APPEND_ENTRY);
+//            req.setDesc("向" + p.getAddr() + "发送" + entry);
+            AppendEntryResult tmpRes = (AppendEntryResult) rpcClient.send(req); // 阻塞式发送 appendEntryRPC
+            if (tmpRes != null) {
+                if (tmpRes.isSuccess()) { // 对方复制成功
+                    nextIndexMap.put(p, lastIndex + 1);
+                    matchIndexMap.put(p, lastIndex);
+                    System.out.println(p.getAddr() + " 复制成功");
+                    return true;
+                } else { // 复制失败
+                    if (tmpRes.getTerm() > currentTerm) {   // 对方任期比自己大
+                        currentTerm = tmpRes.getTerm();
+                        status = NodeStatus.FOLLOWER;
+                        return false;
+                    } else {   // 对方任期不比自己大，但失败了, 说明日志不匹配
+//                                System.out.println("removeFromIndex:" + nextIndex);
+                        System.out.println("下一次发送给" + p.getAddr() + "的是:" + (nextIndex - 1) + "及之后的数据");
+//                                logModule.removeFromIndex(nextIndex);
+                        nextIndexMap.put(p, nextIndex - 1);
+                        // 继续尝试
+                    }
+                }
+                end = System.currentTimeMillis();
+            } else {
+                // tmpRes==null 说明对方宕机，连接失败, 不要进行不必要的尝试
+                return false;
+            }
+        }
+        System.out.println(p.getAddr() + " 复制失败");
+        return false;
+    }
+
 
     public Response handleAppendEntry(AppendEntryParam param) {
         lock.lock();

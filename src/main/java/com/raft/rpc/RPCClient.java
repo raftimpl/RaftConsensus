@@ -9,8 +9,6 @@ import com.raft.pojo.Response;
  * created by Ethan-Walker on 2019/4/9
  */
 public class RPCClient {
-
-
     private static RpcClient client = new RpcClient();
 
     static {
@@ -22,7 +20,7 @@ public class RPCClient {
         try {
             resp = (Response) client.invokeSync(request.getUrl(), request, 20 * 1000);
         } catch (RemotingException e) {
-            e.printStackTrace();
+//            e.printStackTrace();
             System.out.println(request.getUrl() + " 连接失败");
         } catch (InterruptedException e) {
             e.printStackTrace();
