@@ -85,7 +85,7 @@ public class Client {
         request1.setReqObj(c1);
         request1.setType(Request.RequestType.CLIENT);
         request1.setDesc("发送put请求");
-        request1.setUrl("localhost:8001");
+        request1.setUrl("localhost:8002");
         ClientResp resp = (ClientResp) rpcClient.send(request1);
         System.out.println("c1Result: =" + resp);
 
