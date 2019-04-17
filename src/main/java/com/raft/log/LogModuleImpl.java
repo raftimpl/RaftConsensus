@@ -46,6 +46,7 @@ public class LogModuleImpl implements LogModule {
         lock = new ReentrantLock();
     }
 
+    //写入LogEntry
     public void write(LogEntry entry) {
         lock.lock();
         System.out.println("-----------to write: " + entry + "------------");
@@ -66,6 +67,7 @@ public class LogModuleImpl implements LogModule {
         System.out.println("--------write-over----------------");
     }
 
+    //由索引值得到LogEntry
     public LogEntry read(long index) {
         try {
             byte[] res = rocksDB.get(convertToBytes(index));
@@ -77,6 +79,7 @@ public class LogModuleImpl implements LogModule {
         return null;
     }
 
+    //获取最新的LogEntry
     public LogEntry getLast() {
         long lastIndex = getLastIndex();
         try {
@@ -90,6 +93,8 @@ public class LogModuleImpl implements LogModule {
         return null;
     }
 
+
+    //删除从index之后所有的日志条目
     @Override
     public void removeFromIndex(long index) {
         lock.lock();
@@ -110,6 +115,7 @@ public class LogModuleImpl implements LogModule {
         }
     }
 
+    //获取最新的index
     public Long getLastIndex() {
         byte[] lastIndex = "-1".getBytes();
         try {
@@ -127,6 +133,7 @@ public class LogModuleImpl implements LogModule {
         return a.toString().getBytes();
     }
 
+    //更新最新日志条目的index
     public void updateLastIndex(long index) {
         try {
             rocksDB.put(LAST_INDEX_KEY, convertToBytes(index));
