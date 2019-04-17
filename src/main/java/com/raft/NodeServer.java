@@ -678,7 +678,6 @@ public class NodeServer {
         @Override
         public void run() {
             logModule.printAll();
-
             stateMachine.print();
         }
     }

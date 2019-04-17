@@ -1,3 +1,4 @@
+
 package com.raft.statemachine;
 
 import com.raft.pojo.Command;
@@ -102,13 +103,13 @@ public class StateMachineImpl implements StateMachine{
 
     @Override
     public void print() {
-            RocksIterator rocksIterator = rocksDB.newIterator();
-            rocksIterator.seekToFirst();
-            while (rocksIterator.isValid()) {
-                byte[] key = rocksIterator.key();
-                byte[] value = rocksIterator.value();
-                System.out.println(new String(key) + "=" + new String(value));
-                rocksIterator.next();
+        RocksIterator rocksIterator = rocksDB.newIterator();
+        rocksIterator.seekToFirst();
+        while (rocksIterator.isValid()) {
+            byte[] key = rocksIterator.key();
+            byte[] value = rocksIterator.value();
+            System.out.println(new String(key) + "=" + new String(value));
+            rocksIterator.next();
+        }
     }
-}
 }
