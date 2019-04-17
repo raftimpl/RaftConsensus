@@ -14,9 +14,9 @@ public class Client2 {
 
         RPCClient client = new RPCClient();
         Request<Command> request = new Request<>();
-        Command c1 = new Command("a", Command.GET);
-        Command c2 = new Command("b", Command.GET);
-        Command c3 = new Command("c", Command.GET);
+        Command c1 = new Command(Command.GET);
+        Command c2 = new Command(Command.GET);
+        Command c3 = new Command(Command.GET);
 
         String addr = "localhost:8003";
 

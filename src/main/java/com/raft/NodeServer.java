@@ -5,6 +5,8 @@ import com.raft.log.LogModuleImpl;
 import com.raft.pojo.*;
 import com.raft.rpc.RPCClient;
 import com.raft.rpc.RPCServer;
+import com.raft.statemachine.StateMachine;
+import com.raft.statemachine.StateMachineImpl;
 import com.sun.xml.internal.bind.v2.TODO;
 
 import java.text.SimpleDateFormat;
@@ -38,6 +40,7 @@ public class NodeServer {
     private static ScheduledExecutorService threadPool;
 
     private volatile LogModule logModule;
+    private volatile StateMachine stateMachine;
 
     private PeerSet peerSet;
     private ReentrantLock lock;
@@ -111,6 +114,9 @@ public class NodeServer {
         status = NodeStatus.FOLLOWER;
         lock = new ReentrantLock();
 
+        commitIndex=-1;
+        lastApplied=-1;
+
         // 创建 rpc server 并启动
         rpcServer = new RPCServer(selfPort, this);
         rpcServer.start();
@@ -118,6 +124,7 @@ public class NodeServer {
 
         // 创建日志模块
         logModule = new LogModuleImpl();
+        stateMachine=new StateMachineImpl();
 
         // 创建线程池，执行各项任务
         threadPool = Executors.newScheduledThreadPool(3);
@@ -299,6 +306,18 @@ public class NodeServer {
             if (currentTerm != reqObj.getTerm()) {
                 currentTerm = reqObj.getTerm();
             }
+            commitIndex=reqObj.getLeaderCommitIndex();
+
+
+            //Follower收到心跳后应用状态机
+            LogEntry newLogEntry;
+            if (lastApplied<commitIndex) System.out.println("提交状态机");
+            for (long i=lastApplied+1;i<=commitIndex;i++){
+                newLogEntry=logModule.read(i);
+                stateMachine.apply(newLogEntry);
+            }
+            lastApplied=commitIndex;
+
 
             // 检验当前日志是否缺少 (重启后的节点很有可能缺少部分日志项)
             long prevLogIndex = reqObj.getPrevLogIndex();
@@ -334,7 +353,7 @@ public class NodeServer {
                 param.setEntries(null);
                 param.setLeaderId(peerSet.getSelf().getAddr());
                 param.setTerm(currentTerm);
-
+                param.setLeaderCommitIndex(commitIndex);
                 // 这里的 prevLogIndex/term 就设置成 lastEntry 的index/term, 不需要设置成 nextIndex 的 prevIndex, 因为发送日志不走这, nextIndex-- 不会在这起到作用
                 LogEntry lastEntry = logModule.getLast();
                 if (lastEntry != null) {
@@ -356,14 +375,14 @@ public class NodeServer {
                         public void run() {
                             AppendEntryResult resp = (AppendEntryResult) rpcClient.send(request);
                             if (resp == null) {
-                                System.out.println(request.getDesc() + " =>心跳失败");
+                                System.out.println(request.getDesc() + " =>1心跳失败");
                                 return;
                             }
                             if (resp.getTerm() > currentTerm) {
                                 status = NodeStatus.FOLLOWER;
                                 currentTerm = resp.getTerm();
                                 voteFor = null;
-                                System.out.println(request.getDesc() + " =>心跳失败");
+                                System.out.println(request.getDesc() + " =>2心跳失败");
                             } // else 不处理
                             else if (resp.getTerm() == Integer.MIN_VALUE) { // 说明目标节点缺少部分日志
                                 System.out.println("发现目标节点缺少部分日志");
@@ -387,8 +406,7 @@ public class NodeServer {
 
 
     public Response handleGetRequest(Request<Command> request) {
-        String key = request.getReqObj().getKey();
-
+        String key= request.getReqObj().getKey();
         // 从状态机中查询 key 得到 LogEntry
         return ClientResp.yes(null);
     }
@@ -468,6 +486,18 @@ public class NodeServer {
             commitIndex = entry.getIndex();
 
             // TODO: 2019/4/14  尝试提交到状态机
+            //提交到状态机
+            LogEntry newLogEntry;
+            if (lastApplied<commitIndex) System.out.println("提交状态机");
+            for (long i=lastApplied+1;i<=commitIndex;i++){
+                newLogEntry=logModule.read(i);
+                System.out.println(newLogEntry.getCommand().toString());
+                stateMachine.apply(newLogEntry);
+            }
+            lastApplied=commitIndex;
+            stateMachine.print();
+            System.out.println("lastapplied="+lastApplied);
+
             return ClientResp.yes("提交成功");
         } else {
             // 复制失败,同时删除 leader 下的此日志之后的所有日志
@@ -485,6 +515,14 @@ public class NodeServer {
                     }
                 }
             }
+            LogEntry newLogEntry;
+            for (long i=lastApplied+1;i<=commitIndex;i++){
+                newLogEntry=logModule.read(i);
+                System.out.println(newLogEntry.getCommand().toString());
+                stateMachine.apply(newLogEntry);
+            }
+            lastApplied=commitIndex;
+
             return ClientResp.no("提交失败");
         }
     }
@@ -640,6 +678,8 @@ public class NodeServer {
         @Override
         public void run() {
             logModule.printAll();
+
+            stateMachine.print();
         }
     }
 

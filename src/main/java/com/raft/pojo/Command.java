@@ -23,6 +23,10 @@ public class Command implements Serializable {
         this.type = type;
     }
 
+    public Command(int type){
+        this.type=type;
+    }
+
     public int getType() {
         return type;
     }

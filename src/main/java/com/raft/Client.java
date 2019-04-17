@@ -81,7 +81,7 @@ public class Client {
         RPCClient rpcClient = new RPCClient();
         Request<Command> request1 = new Request<>();
 
-        Command c1 = new Command("f", "666", Command.PUT);
+        Command c1 = new Command("a", "666", Command.PUT);
         request1.setReqObj(c1);
         request1.setType(Request.RequestType.CLIENT);
         request1.setDesc("发送put请求");
