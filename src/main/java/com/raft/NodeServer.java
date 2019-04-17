@@ -5,6 +5,7 @@ import com.raft.log.LogModuleImpl;
 import com.raft.pojo.*;
 import com.raft.rpc.RPCClient;
 import com.raft.rpc.RPCServer;
+import com.sun.xml.internal.bind.v2.TODO;
 
 import java.text.SimpleDateFormat;
 import java.util.*;
@@ -122,12 +123,14 @@ public class NodeServer {
         threadPool = Executors.newScheduledThreadPool(3);
 
         // 启动定时周期性选举任务
+
         threadPool.scheduleAtFixedRate(new ElectionTask(), 15000, 3000, TimeUnit.MILLISECONDS); // 延迟30s执行，每隔3s 检查是否需要重新选举
         // 启动定时周期性心跳任务
         threadPool.scheduleAtFixedRate(new HeartbeatTask(), 15000, 1000, TimeUnit.MILLISECONDS); // 延迟 30s 执行，每隔 1s 检查是否需要发送心跳
 
         // 启动输出任务, 每隔 3s 打印当前节点存储的日志项
         threadPool.scheduleAtFixedRate(new PrintTask(), 20000, 10000, TimeUnit.MILLISECONDS);
+
 
         // 获取当前任期
         LogEntry entry = logModule.getLast();
@@ -467,7 +470,7 @@ public class NodeServer {
             // TODO: 2019/4/14  尝试提交到状态机
             return ClientResp.yes("提交成功");
         } else {
-            // 复制失败,同时删除 leader 下的此日志
+            // 复制失败,同时删除 leader 下的此日志之后的所有日志
             logModule.removeFromIndex(entry.getIndex());
 
             // 尝试根据 matchIndexMap 更新 commitIndex
@@ -482,7 +485,6 @@ public class NodeServer {
                     }
                 }
             }
-
             return ClientResp.no("提交失败");
         }
     }
@@ -616,7 +618,6 @@ public class NodeServer {
                 commitIndex = Math.min(param.getLeaderCommitIndex(), logModule.getLastIndex());
 //                lastApplied = commitIndex;
             }
-
 //            System.out.println("4");
 
             return AppendEntryResult.yes(currentTerm);

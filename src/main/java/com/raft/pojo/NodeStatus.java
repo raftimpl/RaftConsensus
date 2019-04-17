@@ -4,5 +4,4 @@ public enum NodeStatus {
     FOLLOWER,
     CANDIDATE,
     LEADER
-
 }
