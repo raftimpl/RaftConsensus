@@ -1,9 +1,12 @@
 package com.raft.pojo;
 
+import java.io.Serializable;
+import java.util.Objects;
+
 /**
  * created by Ethan-Walker on 2019/4/9
  */
-public class Peer {
+public class Peer implements Serializable {
     private String addr; // ip:port
     private int port;
 
@@ -41,5 +44,10 @@ public class Peer {
     public boolean equals(Object obj) {
         Peer p = (Peer) obj;
         return addr.equals(p.getAddr());
+    }
+
+    @Override
+    public int hashCode() {
+        return Objects.hash(addr);
     }
 }

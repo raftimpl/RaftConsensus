@@ -1,4 +1,5 @@
 /db/*
+/cluster/*
 /.idea/*
 /target/*
 *.iml

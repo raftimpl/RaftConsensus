@@ -3,7 +3,7 @@ package com.raft;
 import com.raft.pojo.ClientResp;
 import com.raft.pojo.Command;
 import com.raft.pojo.Request;
-import com.raft.rpc.RPCClient;
+import com.raft.rpc.NodeRPCClient;
 
 /**
  * created by Ethan-Walker on 2019/4/14
@@ -12,7 +12,7 @@ public class Client2 {
     public static void main(String[] args) {
 
 
-        RPCClient client = new RPCClient();
+        NodeRPCClient client = new NodeRPCClient();
         Request<Command> request = new Request<>();
         Command c1 = new Command("a", Command.GET);
         Command c2 = new Command("b", Command.GET);

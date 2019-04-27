@@ -3,12 +3,12 @@ package com.raft;
 import com.raft.log.LogModule;
 import com.raft.log.LogModuleImpl;
 import com.raft.pojo.*;
-import com.raft.rpc.RPCClient;
-import com.raft.rpc.RPCServer;
+
+import com.raft.rpc.ManageRPCClient;
+import com.raft.rpc.NodeRPCClient;
+import com.raft.rpc.NodeRPCServer;
 import com.raft.statemachine.StateMachine;
 import com.raft.statemachine.StateMachineImpl;
-import com.sun.xml.internal.bind.v2.TODO;
-
 import java.text.SimpleDateFormat;
 import java.util.*;
 import java.util.concurrent.*;
@@ -35,14 +35,20 @@ public class NodeServer {
     private long commitIndex;    // 已经提交的最大的日志索引，通过读取持久化信息-SegmentLog 得到
     private long lastApplied;    // 已经应用到状态机的最大日志索引
 
-    private static RPCServer rpcServer;
-    private static RPCClient rpcClient;
+    private static NodeRPCServer rpcServer;
+    private static NodeRPCClient rpcClient;
+    private static ManageRPCClient registerClient;
+
     private static ScheduledExecutorService threadPool;
 
     private volatile LogModule logModule;
     private volatile StateMachine stateMachine;
 
+    private String manageServerAddr;
+
+    private volatile boolean hasRegisted;
     private PeerSet peerSet;
+
     private ReentrantLock lock;
 
     // leader 中不稳定存在
@@ -55,60 +61,7 @@ public class NodeServer {
         this.status = NodeStatus.FOLLOWER;
     }
 
-    public Response handleRequestVote(VoteParam param) {
-        System.out.println("handleRequestVote------------: selfTerm=" + currentTerm + ",voteFor=" + voteFor);
-        System.out.println(param);
-
-        lock.lock();
-        prevElectionStamp = System.currentTimeMillis();// 定时器重置，防止一个 term 出现多个 candidate
-
-        try {
-            if (status == NodeStatus.LEADER || param.getTerm() <= currentTerm) { // == 也不投，== 说明当前节点成为 candidate 或者 已经为其他节点投过票
-                System.out.println("拒绝投票--------------");
-                return VoteResult.no(currentTerm);
-            }
-//        if (voteFor == null || voteFor == param.getCandidateId()) { 不要根据 voteFor 判断是否可以支持投票，而是根据任期 term> currentTerm 决定是否投票
-            LogEntry lastEntry = null;
-            if ((lastEntry = logModule.getLast()) != null) {
-                if (lastEntry.getTerm() > param.getPrevLogTerm()) {
-                    System.out.println("拒绝投票----------------");
-                    return VoteResult.no(currentTerm);
-                }
-                if (lastEntry.getIndex() > param.getPrevLogIndex()) {
-                    System.out.println("拒绝投票--------------");
-                    return VoteResult.no(currentTerm);
-                }
-            }
-            System.out.println("同意投票-------------------");
-            status = NodeStatus.FOLLOWER;
-            voteFor = param.getCandidateId();
-
-            return VoteResult.yes(currentTerm);
-//            }
-        } finally {
-            lock.unlock();
-        }
-
-    }
-
-    public void init(List<String> ipAddrs, int selfPort, String selfAddr) {
-        // 设置节点信息
-        peerSet = new PeerSet();
-        Peer cur = new Peer(selfAddr, selfPort);
-        List<Peer> peers = new ArrayList<>();
-        List<Peer> otherPeers = new ArrayList<>();
-
-        for (String ipAddr : ipAddrs) {
-            Peer p = new Peer(ipAddr);
-            peers.add(p);
-            if (!p.equals(cur)) {
-                otherPeers.add(p);
-            }
-        }
-        peerSet.setSelf(cur);
-        peerSet.setSet(peers);
-        peerSet.setOtherPeers(otherPeers);
-
+    public void init(String selfAddr, int selfPort, String manageServerAddr) {
 
         // 默认初始状态 follower
         status = NodeStatus.FOLLOWER;
@@ -118,25 +71,26 @@ public class NodeServer {
         lastApplied=-1;
 
         // 创建 rpc server 并启动
-        rpcServer = new RPCServer(selfPort, this);
+        rpcServer = new NodeRPCServer(selfPort, this);
         rpcServer.start();
-        rpcClient = new RPCClient();
+        rpcClient = new NodeRPCClient();
+        registerClient = new ManageRPCClient();
 
         // 创建日志模块
         logModule = new LogModuleImpl();
         stateMachine=new StateMachineImpl();
 
         // 创建线程池，执行各项任务
-        threadPool = Executors.newScheduledThreadPool(3);
+        threadPool = Executors.newScheduledThreadPool(4);
 
         // 启动定时周期性选举任务
+        threadPool.scheduleWithFixedDelay(new ElectionTask(), 30000, 3000, TimeUnit.MILLISECONDS); // 延迟30s执行，每隔3s 检查是否需要重新选举
 
-        threadPool.scheduleAtFixedRate(new ElectionTask(), 15000, 3000, TimeUnit.MILLISECONDS); // 延迟30s执行，每隔3s 检查是否需要重新选举
         // 启动定时周期性心跳任务
-        threadPool.scheduleAtFixedRate(new HeartbeatTask(), 15000, 1000, TimeUnit.MILLISECONDS); // 延迟 30s 执行，每隔 1s 检查是否需要发送心跳
+        threadPool.scheduleWithFixedDelay(new HeartbeatTask(), 33000, 1000, TimeUnit.MILLISECONDS); // 延迟 30s 执行，每隔 1s 检查是否需要发送心跳
 
         // 启动输出任务, 每隔 3s 打印当前节点存储的日志项
-        threadPool.scheduleAtFixedRate(new PrintTask(), 20000, 10000, TimeUnit.MILLISECONDS);
+        threadPool.scheduleWithFixedDelay(new PrintTask(), 20000, 10000, TimeUnit.MILLISECONDS);
 
 
         // 获取当前任期
@@ -145,6 +99,74 @@ public class NodeServer {
             currentTerm = entry.getTerm();
         }
         // entry==null, 说明任期为 0, 默认值
+
+        this.manageServerAddr = manageServerAddr;
+        // 设置节点信息
+        peerSet = new PeerSet();
+        Peer cur = new Peer(selfAddr, selfPort);
+        peerSet.setSelf(cur);
+
+        // 启动定时周期性注册当前地址任务
+        threadPool.schedule(new RegisterTask(),0, TimeUnit.MILLISECONDS);
+    }
+
+    public Response register() {
+        ClusterRequest<Peer> request = new ClusterRequest<>();
+        request.setReqObj(peerSet.getSelf());
+        request.setAddr(manageServerAddr);
+        request.setRequestType(ClusterRequest.RequestType.REGISTER_NODE);
+        return registerClient.send(request);
+    }
+
+    public void updatePeerSetInfo() {
+        ClusterRequest request = new ClusterRequest();
+        request.setRequestType(ClusterRequest.RequestType.GET_ALL_NODE);
+        request.setAddr(manageServerAddr);
+
+        Response res = registerClient.send(request);
+
+        Object resObj = res.getResObj();
+        if (resObj != null) {
+            List<Peer> peers = (List<Peer>) resObj;
+            List<Peer> otherPeers = new ArrayList<>();
+            for (Peer p : peers) {
+                if (!p.equals(peerSet.getSelf())) {
+                    otherPeers.add(p);
+                }
+            }
+            peerSet.setOtherPeers(otherPeers);
+            peerSet.setSet(peers);
+        }
+    }
+
+    class RegisterTask implements Runnable {
+        @Override
+        public void run() {
+            while (true) {
+                Response resp = register();
+                if ((boolean) resp.getResObj()) {
+                    System.out.println("注册节点成功,跳出循环");
+                    break;
+                }
+                System.out.println("注册节点失败，循环");
+            }
+            System.out.println(" 签到成功");
+
+            // 启动周期性签到任务
+            threadPool.scheduleAtFixedRate(new SignTask(), 3000, 3000, TimeUnit.MILLISECONDS);
+        }
+    }
+
+    class SignTask implements Runnable {
+        @Override
+        public void run() {
+            ClusterRequest<Peer> request = new ClusterRequest<>();
+            request.setReqObj(peerSet.getSelf());
+            request.setAddr(manageServerAddr);
+            request.setRequestType(ClusterRequest.RequestType.SIGN);
+            registerClient.send(request);
+
+        }
     }
 
     class ElectionTask implements Runnable {
@@ -171,6 +193,8 @@ public class NodeServer {
                 prevElectionStamp = System.currentTimeMillis(); // 设置新的选举时间
                 currentTerm = currentTerm + 1;
                 voteFor = peerSet.getSelf().getAddr();
+
+                updatePeerSetInfo();
 
                 // 2. 获取其他节点信息, 向其他各个节点发送 投票请求
                 List<Peer> otherPeers = peerSet.getOtherPeers();
@@ -259,7 +283,7 @@ public class NodeServer {
                 voteFor = null; // 1. 成为leader后，设置 voteFor=null;2.既没成为leader，也没成为follower,设为 null
 
             } catch (Exception e) {
-                System.out.println("error happen in election");
+                e.printStackTrace();
             } finally {
                 lock.unlock();
             }
@@ -278,6 +302,41 @@ public class NodeServer {
         for (Peer p : otherPeers) {
             nextIndexMap.put(p, lastIndex + 1);
             matchIndexMap.put(p, -1L);
+        }
+    }
+
+    public Response handleRequestVote(VoteParam param) {
+        System.out.println("handleRequestVote------------: selfTerm=" + currentTerm + ",voteFor=" + voteFor);
+        System.out.println(param);
+
+        lock.lock();
+        prevElectionStamp = System.currentTimeMillis();// 定时器重置，防止一个 term 出现多个 candidate
+
+        try {
+            if (status == NodeStatus.LEADER || param.getTerm() <= currentTerm) { // == 也不投，== 说明当前节点成为 candidate 或者 已经为其他节点投过票
+                System.out.println("拒绝投票--------------");
+                return VoteResult.no(currentTerm);
+            }
+//        if (voteFor == null || voteFor == param.getCandidateId()) { 不要根据 voteFor 判断是否可以支持投票，而是根据任期 term> currentTerm 决定是否投票
+            LogEntry lastEntry = null;
+            if ((lastEntry = logModule.getLast()) != null) {
+                if (lastEntry.getTerm() > param.getPrevLogTerm()) {
+                    System.out.println("拒绝投票----------------");
+                    return VoteResult.no(currentTerm);
+                }
+                if (lastEntry.getIndex() > param.getPrevLogIndex()) {
+                    System.out.println("拒绝投票--------------");
+                    return VoteResult.no(currentTerm);
+                }
+            }
+            System.out.println("同意投票-------------------");
+            status = NodeStatus.FOLLOWER;
+            voteFor = param.getCandidateId();
+
+            return VoteResult.yes(currentTerm);
+//            }
+        } finally {
+            lock.unlock();
         }
     }
 
@@ -329,6 +388,7 @@ public class NodeServer {
                 }
             }
 
+
         } finally {
             lock.unlock();
         }
@@ -363,6 +423,8 @@ public class NodeServer {
 
                 List<Peer> otherPeers = peerSet.getOtherPeers();
 //                System.out.println("otherpeers:" + otherPeers);
+
+                updatePeerSetInfo();
 
                 for (Peer peer : otherPeers) {
                     Request<AppendEntryParam> request = new Request<>();
@@ -442,6 +504,9 @@ public class NodeServer {
         // 向其他节点发送 appendEntryRPC
         List<Peer> otherPeers = peerSet.getOtherPeers();
         List<Future<Boolean>> resultList = new ArrayList<>();
+
+        updatePeerSetInfo();
+
         for (Peer p : otherPeers) {
             Future<Boolean> res = threadPool.submit(new Callable<Boolean>() {
                 @Override

@@ -9,7 +9,7 @@ import com.raft.pojo.Request;
 /**
  * created by Ethan-Walker on 2019/4/13
  */
-public class MUserProcessor<T> extends AbstractUserProcessor<T> {
+public class NodeUserProcessor<T> extends AbstractUserProcessor<T> {
 
     @Override
     public void handleRequest(BizContext bizContext, AsyncContext asyncContext, T t) {
