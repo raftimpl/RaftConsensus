@@ -49,22 +49,22 @@ public class LogModuleImpl implements LogModule {
     //写入LogEntry
     public void write(LogEntry entry) {
         lock.lock();
-        System.out.println("-----------to write: " + entry + "------------");
+//        System.out.println("-----------to write: " + entry + "------------");
         try {
             long lastIndex = getLastIndex();
-            System.out.println("lastIndex: " + lastIndex);
+//            System.out.println("lastIndex: " + lastIndex);
             entry.setIndex(lastIndex + 1);
             rocksDB.put(convertToBytes(lastIndex + 1), JSON.toJSONBytes(entry));
             updateLastIndex(lastIndex + 1);
 
-            System.out.println("update lastIndex: " + getLastIndex());
-            System.out.println("after append ,last entry= " + getLast());
+//            System.out.println("update lastIndex: " + getLastIndex());
+//            System.out.println("after append ,last entry= " + getLast());
         } catch (RocksDBException e) {
             e.printStackTrace();
         } finally {
             lock.unlock();
         }
-        System.out.println("--------write-over----------------");
+//        System.out.println("--------write-over----------------");
     }
 
     //由索引值得到LogEntry

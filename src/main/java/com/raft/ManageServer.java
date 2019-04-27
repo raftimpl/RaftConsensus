@@ -33,7 +33,7 @@ public class ManageServer {
 
     private Map<Peer, Long> peerStampMap;
 
-    private long peerTimeout = 20 * 1000; // 超过 20s 会认为当前节点宕机，从集群中移出
+    private long peerTimeout = 10 * 1000; // 超过 10s 会认为当前节点宕机，从集群中移出
 
     public ManageServer(int port) {
         this.selfPort = port;
@@ -119,7 +119,7 @@ public class ManageServer {
 
     public Response getRandomPeer() {
         HashSet<Peer> allPeers = getPeers();
-        int random = new Random().nextInt(allPeers.size() + 1);
+        int random = new Random().nextInt(allPeers.size());
         Response response = new Response();
         response.setObj(new ArrayList<>(allPeers).get(random));
         return response;

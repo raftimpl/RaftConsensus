@@ -3,12 +3,12 @@ package com.raft;
 import com.raft.log.LogModule;
 import com.raft.log.LogModuleImpl;
 import com.raft.pojo.*;
-
 import com.raft.rpc.ManageRPCClient;
 import com.raft.rpc.NodeRPCClient;
 import com.raft.rpc.NodeRPCServer;
 import com.raft.statemachine.StateMachine;
 import com.raft.statemachine.StateMachineImpl;
+
 import java.text.SimpleDateFormat;
 import java.util.*;
 import java.util.concurrent.*;
@@ -67,8 +67,8 @@ public class NodeServer {
         status = NodeStatus.FOLLOWER;
         lock = new ReentrantLock();
 
-        commitIndex=-1;
-        lastApplied=-1;
+        commitIndex = -1;
+        lastApplied = -1;
 
         // 创建 rpc server 并启动
         rpcServer = new NodeRPCServer(selfPort, this);
@@ -78,7 +78,7 @@ public class NodeServer {
 
         // 创建日志模块
         logModule = new LogModuleImpl();
-        stateMachine=new StateMachineImpl();
+        stateMachine = new StateMachineImpl();
 
         // 创建线程池，执行各项任务
         threadPool = Executors.newScheduledThreadPool(4);
@@ -91,7 +91,8 @@ public class NodeServer {
 
         // 启动输出任务, 每隔 3s 打印当前节点存储的日志项
         threadPool.scheduleWithFixedDelay(new PrintTask(), 20000, 10000, TimeUnit.MILLISECONDS);
-
+        // 设置 lastApplied
+        commitIndex = lastApplied = stateMachine.getLastApplied();
 
         // 获取当前任期
         LogEntry entry = logModule.getLast();
@@ -107,7 +108,7 @@ public class NodeServer {
         peerSet.setSelf(cur);
 
         // 启动定时周期性注册当前地址任务
-        threadPool.schedule(new RegisterTask(),0, TimeUnit.MILLISECONDS);
+        threadPool.schedule(new RegisterTask(), 0, TimeUnit.MILLISECONDS);
     }
 
     public Response register() {
@@ -355,7 +356,8 @@ public class NodeServer {
             // 更新时间戳
             prevElectionStamp = System.currentTimeMillis();
             prevHeartBeatStamp = System.currentTimeMillis();
-//            System.out.println("接受到来自 " + reqObj.getLeaderId() + " 的心跳 term=" + reqObj.getTerm() + ", " + System.currentTimeMillis());
+
+//          System.out.println("接受到来自 " + reqObj.getLeaderId() + " 的心跳 term=" + reqObj.getTerm() + ", " + System.currentTimeMillis());
 
             // 设置主从关系
             peerSet.setLeader(new Peer(reqObj.getLeaderId()));
@@ -365,18 +367,6 @@ public class NodeServer {
             if (currentTerm != reqObj.getTerm()) {
                 currentTerm = reqObj.getTerm();
             }
-            commitIndex=reqObj.getLeaderCommitIndex();
-
-
-            //Follower收到心跳后应用状态机
-            LogEntry newLogEntry;
-            if (lastApplied<commitIndex) System.out.println("提交状态机");
-            for (long i=lastApplied+1;i<=commitIndex;i++){
-                newLogEntry=logModule.read(i);
-                stateMachine.apply(newLogEntry);
-            }
-            lastApplied=commitIndex;
-
 
             // 检验当前日志是否缺少 (重启后的节点很有可能缺少部分日志项)
             long prevLogIndex = reqObj.getPrevLogIndex();
@@ -384,10 +374,22 @@ public class NodeServer {
                 LogEntry entry = logModule.read(prevLogIndex);
                 if (entry == null || entry.getTerm() != reqObj.getPrevLogTerm()) {
                     // 返回给心跳一个标记，提醒让leader 启动发送日志的过程（只用发送给当前节点即可）
+                    System.out.println("当前节点缺少日志");
                     return AppendEntryResult.yes(Integer.MIN_VALUE); // term =  MIN_VALUE 为特殊标记
                 }
             }
+            commitIndex = reqObj.getLeaderCommitIndex();
 
+            //Follower收到心跳后应用状态机lastIndex
+            LogEntry newLogEntry;
+            if (lastApplied < commitIndex) {
+                System.out.println("handleHeartbeat: lastApplied=" + lastApplied + ", commitIndex=" + commitIndex);
+                for (long i = lastApplied + 1; i <= commitIndex; i++) {
+                    newLogEntry = logModule.read(i);
+                    stateMachine.apply(newLogEntry);
+                }
+                lastApplied = commitIndex;
+            }
 
         } finally {
             lock.unlock();
@@ -447,7 +449,7 @@ public class NodeServer {
                                 System.out.println(request.getDesc() + " =>2心跳失败");
                             } // else 不处理
                             else if (resp.getTerm() == Integer.MIN_VALUE) { // 说明目标节点缺少部分日志
-                                System.out.println("发现目标节点缺少部分日志");
+                                System.out.println("发现目标节点" + peer.toString() + "缺少部分日志");
                                 if (sendAppendEntry(peer, logModule.getLastIndex())) {
                                     System.out.println("更新成功");
                                 } else {
@@ -468,7 +470,7 @@ public class NodeServer {
 
 
     public Response handleGetRequest(Request<Command> request) {
-        String key= request.getReqObj().getKey();
+        String key = request.getReqObj().getKey();
         // 从状态机中查询 key 得到 LogEntry
         return ClientResp.yes(null);
     }
@@ -553,15 +555,15 @@ public class NodeServer {
             // TODO: 2019/4/14  尝试提交到状态机
             //提交到状态机
             LogEntry newLogEntry;
-            if (lastApplied<commitIndex) System.out.println("提交状态机");
-            for (long i=lastApplied+1;i<=commitIndex;i++){
-                newLogEntry=logModule.read(i);
+            if (lastApplied < commitIndex) System.out.println("提交状态机");
+            for (long i = lastApplied + 1; i <= commitIndex; i++) {
+                newLogEntry = logModule.read(i);
                 System.out.println(newLogEntry.getCommand().toString());
                 stateMachine.apply(newLogEntry);
             }
-            lastApplied=commitIndex;
+            lastApplied = commitIndex;
             stateMachine.print();
-            System.out.println("lastapplied="+lastApplied);
+            System.out.println("lastapplied=" + lastApplied);
 
             return ClientResp.yes("提交成功");
         } else {
@@ -581,12 +583,12 @@ public class NodeServer {
                 }
             }
             LogEntry newLogEntry;
-            for (long i=lastApplied+1;i<=commitIndex;i++){
-                newLogEntry=logModule.read(i);
+            for (long i = lastApplied + 1; i <= commitIndex; i++) {
+                newLogEntry = logModule.read(i);
                 System.out.println(newLogEntry.getCommand().toString());
                 stateMachine.apply(newLogEntry);
             }
-            lastApplied=commitIndex;
+            lastApplied = commitIndex;
 
             return ClientResp.no("提交失败");
         }
@@ -705,8 +707,7 @@ public class NodeServer {
                         break; // 删除该位置及之后的日志，跳出循环，从 entry(i).getIndex() 处存储日志
                     }
                     // == ，不用添加，继续遍历比较下一个日志
-                } else { // entry == null , 说明从 entry(i).getIndex() 处开始全部添加到当前节点的日志中
-                    System.out.println("entry==null");
+                } else { // entry == null , 说明从 param.getEntries().get(i) 处开始全部添加到当前节点的日志中
                     break;
                 }
             }
@@ -716,11 +717,11 @@ public class NodeServer {
                 logModule.write(param.getEntries().get(i));
             }
 
-            // 更新 leaderCommit
+/*            // 更新 leaderCommit
             if (param.getLeaderCommitIndex() > commitIndex) {
                 commitIndex = Math.min(param.getLeaderCommitIndex(), logModule.getLastIndex());
 //                lastApplied = commitIndex;
-            }
+            }*/
 //            System.out.println("4");
 
             return AppendEntryResult.yes(currentTerm);

@@ -22,5 +22,7 @@ public interface StateMachine {
 
     void print();
 
+    long getLastApplied();
+
 }
 
