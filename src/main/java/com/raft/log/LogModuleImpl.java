@@ -72,7 +72,7 @@ public class LogModuleImpl implements LogModule {
         try {
             byte[] res = rocksDB.get(convertToBytes(index));
             if (res != null)
-                return (LogEntry) JSON.parseObject(res, LogEntry.class);
+                return JSON.parseObject(res, LogEntry.class);
         } catch (RocksDBException e) {
             e.printStackTrace();
         }
@@ -154,5 +154,6 @@ public class LogModuleImpl implements LogModule {
             LogEntry entry = read(i);
             System.out.println(entry.toString());
         }
+
     }
 }

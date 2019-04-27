@@ -8,15 +8,15 @@ import com.raft.pojo.*;
 /**
  * created by Ethan-Walker on 2019/4/9
  */
-public class RPCServer {
+public class NodeRPCServer {
     private static RpcServer server;
 
     private NodeServer node;
 
-    public RPCServer(int port, NodeServer node) {
+    public NodeRPCServer(int port, NodeServer node) {
         this.node = node;
         server = new RpcServer(port);
-        server.registerUserProcessor(new MUserProcessor<Request>() {
+        server.registerUserProcessor(new NodeUserProcessor<Request>() {
             public Object handleRequest(BizContext bizContext, Request request) throws Exception {
                 return handlerRequest(request);
             }

@@ -2,29 +2,29 @@ package com.raft.rpc;
 
 import com.alipay.remoting.exception.RemotingException;
 import com.alipay.remoting.rpc.RpcClient;
-import com.raft.pojo.Request;
+import com.raft.pojo.ClusterRequest;
 import com.raft.pojo.Response;
 
 /**
- * created by Ethan-Walker on 2019/4/9
+ * created by Ethan-Walker on 2019/4/17
  */
-public class RPCClient {
+public class ManageRPCClient {
+
     private static RpcClient client = new RpcClient();
 
     static {
         client.init();
     }
 
-    public Response send(Request request) {
-        Response resp = null;
+    public Response send(ClusterRequest request) {
+        Response res = null;
         try {
-            resp = (Response) client.invokeSync(request.getUrl(), request, 20 * 1000);
+            res = (Response) client.invokeSync(request.getAddr(), request, 10 * 1000);
         } catch (RemotingException e) {
-//            e.printStackTrace();
-            System.out.println(request.getUrl() + " 连接失败");
+            e.printStackTrace();
         } catch (InterruptedException e) {
             e.printStackTrace();
         }
-        return resp;
+        return res;
     }
 }
