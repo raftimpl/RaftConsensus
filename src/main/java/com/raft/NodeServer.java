@@ -472,7 +472,8 @@ public class NodeServer {
     public Response handleGetRequest(Request<Command> request) {
         String key = request.getReqObj().getKey();
         // 从状态机中查询 key 得到 LogEntry
-        return ClientResp.yes(null);
+        String value = stateMachine.getValue(key);
+        return ClientResp.yes(value);
     }
 
     public Response redirect(Request<Command> request) {
@@ -495,7 +496,7 @@ public class NodeServer {
         if (request.getReqObj().getType() == Command.GET) {
             return handleGetRequest(request);
         }
-        System.out.println("currentTerm:" + currentTerm);
+//        System.out.println("currentTerm:" + currentTerm);
 
         // put 请求
         System.out.println(System.currentTimeMillis() + "-------" + request.getReqObj());

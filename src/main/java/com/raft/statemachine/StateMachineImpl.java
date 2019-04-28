@@ -45,13 +45,13 @@ public class StateMachineImpl implements StateMachine {
         lock = new ReentrantLock();
     }
 
-    //由key获取value
-
     public String getValue(String key) {
         String s = null;
         try {
             byte[] value = rocksDB.get(key.getBytes());
-            s = new String(value);
+            if (value != null) {
+                s = new String(value);
+            }
         } catch (RocksDBException e) {
             e.printStackTrace();
         }
