@@ -54,12 +54,15 @@ public class ManageServer {
         rpcServer.start();
         peerStampMap = new HashMap<>();
         threadPool = Executors.newScheduledThreadPool(2);
-        threadPool.scheduleAtFixedRate(new RegisterAddrCheckTask(), 0, 2000, TimeUnit.MILLISECONDS);
+
+        //threadPool.scheduleAtFixedRate(new RegisterAddrCheckTask(), 0, 2000, TimeUnit.MILLISECONDS);
         threadPool.scheduleAtFixedRate(new PrintTask(), 0, 5000, TimeUnit.MILLISECONDS);
 
     }
 
     /**
+     * 是否应该检查过期移除？移除之后导致集群leader 以为集群总数量减少 => 不应该移除
+     * 例如: 集群中 5 个节点，2个节点宕机，这时 leader 仍然必须要得到 3个节点（包括自己）的认可才能确定一条日志复制成功
      * 检查各个节点的时间戳是否过期
      */
     class RegisterAddrCheckTask implements Runnable {
