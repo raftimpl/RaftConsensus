@@ -321,12 +321,8 @@ public class NodeServer {
 //        if (voteFor == null || voteFor == param.getCandidateId()) { 不要根据 voteFor 判断是否可以支持投票，而是根据任期 term> currentTerm 决定是否投票
             LogEntry lastEntry = null;
             if ((lastEntry = logModule.getLast()) != null) {
-                if (lastEntry.getTerm() > param.getPrevLogTerm()) {
-                    System.out.println("拒绝投票----------------");
-                    return VoteResult.no(currentTerm);
-                }
-                if (lastEntry.getIndex() > param.getPrevLogIndex()) {
-                    System.out.println("拒绝投票--------------");
+                if (lastEntry.getTerm() > param.getPrevLogTerm() || lastEntry.getIndex() > param.getPrevLogIndex()) {
+                    System.out.println("拒绝投票:candidate 节点日志还没当前节点新--------------");
                     return VoteResult.no(currentTerm);
                 }
             }
@@ -335,7 +331,7 @@ public class NodeServer {
             voteFor = param.getCandidateId();
 
             return VoteResult.yes(currentTerm);
-//            }
+//         }
         } finally {
             lock.unlock();
         }
@@ -553,7 +549,6 @@ public class NodeServer {
             // 认为复制成功
             commitIndex = entry.getIndex();
 
-            // TODO: 2019/4/14  尝试提交到状态机
             //提交到状态机
             LogEntry newLogEntry;
             if (lastApplied < commitIndex) System.out.println("提交状态机");
@@ -646,7 +641,7 @@ public class NodeServer {
                     } else {   // 对方任期不比自己大，但失败了, 说明日志不匹配
 //                                System.out.println("removeFromIndex:" + nextIndex);
                         System.out.println("下一次发送给" + p.getAddr() + "的是:" + (nextIndex - 1) + "及之后的数据");
-//                                logModule.removeFromIndex(nextIndex);
+//                      logModule.removeFromIndex(nextIndex);  不应该删除，只减少 nextIndex 即可
                         nextIndexMap.put(p, nextIndex - 1);
                         // 继续尝试
                     }
