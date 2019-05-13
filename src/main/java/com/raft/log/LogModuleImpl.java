@@ -19,8 +19,11 @@ public class LogModuleImpl implements LogModule {
     private static final Logger LOGGER = LoggerFactory.getLogger(DefaultNode.class);
 
     private final static byte[] LAST_INDEX_KEY = "LAST_INDEX_KEY".getBytes();
-    private static String dbDir;
-    private static String logsDir;
+    private final static byte[] LAST_SNAPSHOT_INDEX = "LAST_SNAPSHOT_INDEX".getBytes();
+    private final static byte[] LAST_SNAPSHOT_TERM = "LAST_SNAPSHOT_TERM".getBytes();
+
+    private final static String dbDir;
+    private final static String logsDir;
     private static RocksDB rocksDB;
 
     private ReentrantLock lock;
@@ -69,10 +72,18 @@ public class LogModuleImpl implements LogModule {
 
     //由索引值得到LogEntry
     public LogEntry read(long index) {
+        if (index == getLastSnapshotIndex()) {
+            LogEntry entry = new LogEntry();
+            entry.setIndex(getLastSnapshotIndex());
+            entry.setTerm(getLastSnapshotTerm());
+            return entry;
+        }
         try {
             byte[] res = rocksDB.get(convertToBytes(index));
-            if (res != null)
+
+            if (res != null) {
                 return JSON.parseObject(res, LogEntry.class);
+            }
         } catch (RocksDBException e) {
             e.printStackTrace();
         }
@@ -85,14 +96,59 @@ public class LogModuleImpl implements LogModule {
         try {
             if (lastIndex == -1) return null;
             byte[] result = rocksDB.get(convertToBytes(lastIndex));
-            LogEntry entry = JSON.parseObject(result, LogEntry.class);
-            return entry;
+            if (result != null) {
+                LogEntry entry = JSON.parseObject(result, LogEntry.class);
+                return entry;
+            } else {
+                // 该日志被生成快照了
+//                System.out.println("该日志被生成快照了");
+                LogEntry entry = new LogEntry();
+                entry.setTerm(getLastSnapshotTerm());
+                entry.setIndex(getLastSnapshotIndex());
+                return entry;
+            }
         } catch (RocksDBException e) {
             e.printStackTrace();
         }
         return null;
     }
 
+    @Override
+    public void removeRange(long start, long end) {
+        lock.lock();
+        long i = 0;
+        try {
+            for (i = start; i <= end; i++) {
+                rocksDB.delete(String.valueOf(i).getBytes());
+            }
+        } catch (RocksDBException e) {
+            e.printStackTrace();
+        } finally {
+            lock.unlock();
+        }
+    }
+
+    public void updateLastSnapshotIndex(long index) {
+        try {
+            rocksDB.put(LAST_SNAPSHOT_INDEX, convertToBytes(index));
+        } catch (RocksDBException e) {
+            e.printStackTrace();
+        }
+    }
+
+    @Override
+    public long getLastSnapshotIndex() {
+        byte[] bys = "-1".getBytes();
+        try {
+            bys = rocksDB.get(LAST_SNAPSHOT_INDEX);
+            if (bys == null) {
+                bys = "-1".getBytes();
+            }
+        } catch (RocksDBException e) {
+            e.printStackTrace();
+        }
+        return Long.parseLong(new String(bys));
+    }
 
     //删除从index之后所有的日志条目
     @Override
@@ -115,6 +171,20 @@ public class LogModuleImpl implements LogModule {
         }
     }
 
+    @Override
+    public int getLastSnapshotTerm() {
+        byte[] lastTerm = "-1".getBytes();
+        try {
+            lastTerm = rocksDB.get(LAST_SNAPSHOT_TERM);
+            if (lastTerm == null) {
+                lastTerm = "-1".getBytes();
+            }
+        } catch (RocksDBException e) {
+            e.printStackTrace();
+        }
+        return Integer.parseInt(new String(lastTerm));
+    }
+
     //获取最新的index
     public Long getLastIndex() {
         byte[] lastIndex = "-1".getBytes();
@@ -133,10 +203,23 @@ public class LogModuleImpl implements LogModule {
         return a.toString().getBytes();
     }
 
+    public byte[] convertToBytes(Integer a) {
+        return a.toString().getBytes();
+    }
+
     //更新最新日志条目的index
     public void updateLastIndex(long index) {
         try {
             rocksDB.put(LAST_INDEX_KEY, convertToBytes(index));
+        } catch (RocksDBException e) {
+            e.printStackTrace();
+        }
+    }
+
+    //更新最新日志条目的term
+    public void updateLastSnapshotTerm(int term) {
+        try {
+            rocksDB.put(LAST_SNAPSHOT_TERM, convertToBytes(term));
         } catch (RocksDBException e) {
             e.printStackTrace();
         }
@@ -148,12 +231,10 @@ public class LogModuleImpl implements LogModule {
         if (lastIndex <= -1)
             return;
         // 没有就不输出
-        System.out.println("-----" + logsDir + "--------------");
-        System.out.println("lastIndex: " + lastIndex);
-        for (long i = 0; i <= lastIndex; i++) {
+        System.out.println("---------日志:lastSnapshotIndex= " + getLastSnapshotIndex() + ",lastSnapshotTerm=" + getLastSnapshotTerm() + ", lastIndex = " + lastIndex + "--------");
+        for (long i = getLastSnapshotIndex() + 1; i <= lastIndex; i++) {
             LogEntry entry = read(i);
             System.out.println(entry.toString());
         }
-
     }
 }

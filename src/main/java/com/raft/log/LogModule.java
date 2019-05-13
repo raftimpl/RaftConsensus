@@ -17,4 +17,14 @@ public interface LogModule {
     void removeFromIndex(long index);
 
     void printAll();
+
+    long getLastSnapshotIndex();
+
+    void removeRange(long start, long end);
+
+    int getLastSnapshotTerm();
+
+    void updateLastSnapshotIndex(long index);
+
+    void updateLastSnapshotTerm(int term);
 }

@@ -1,6 +1,7 @@
 package com.raft.pojo;
 
 import java.io.Serializable;
+import java.util.UUID;
 
 /**
  * created by Ethan-Walker on 2019/4/9
@@ -10,6 +11,11 @@ public class Request<T> implements Serializable {
     private RequestType type;
     private T reqObj;
     private String desc;
+    private String id;
+
+    public Request() {
+        this.id = UUID.randomUUID().toString();
+    }
 
     public void setDesc(String desc) {
         this.desc = desc;
@@ -45,11 +51,16 @@ public class Request<T> implements Serializable {
         return type;
     }
 
+    public String getId() {
+        return id;
+    }
+
     public enum RequestType {
         VOTE,
         APPEND_ENTRY,
         HEARTBEAT,
         CLIENT, // 客户端发送来的请求
-        QUERY_ENTRY
+        QUERY_ENTRY,
+        INSTALL_SNAPSHOT
     }
 }

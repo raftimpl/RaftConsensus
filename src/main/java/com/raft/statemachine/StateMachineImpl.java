@@ -12,6 +12,7 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 import java.io.File;
+import java.util.LinkedHashMap;
 import java.util.concurrent.locks.ReentrantLock;
 
 public class StateMachineImpl implements StateMachine {
@@ -84,6 +85,18 @@ public class StateMachineImpl implements StateMachine {
         }
     }
 
+    public void store(String key, String value) {
+        lock.lock();
+
+        try {
+            rocksDB.put(key.getBytes(), value.getBytes());
+        } catch (RocksDBException e) {
+            e.printStackTrace();
+        } finally {
+            lock.unlock();
+        }
+    }
+
     //应用到状态机
     @Override
     public void apply(LogEntry logEntry) {
@@ -112,6 +125,10 @@ public class StateMachineImpl implements StateMachine {
     public void print() {
         RocksIterator rocksIterator = rocksDB.newIterator();
         rocksIterator.seekToFirst();
+        if (!rocksIterator.isValid()) {
+            return;
+        }
+        System.out.println("---------状态机---------");
         while (rocksIterator.isValid()) {
             byte[] key = rocksIterator.key();
             byte[] value = rocksIterator.value();
@@ -135,5 +152,19 @@ public class StateMachineImpl implements StateMachine {
 
     public byte[] convertToBytes(long index) {
         return String.valueOf(index).getBytes();
+    }
+
+    @Override
+    public LinkedHashMap<String, String> getData() {
+        LinkedHashMap<String, String> data = new LinkedHashMap<>();
+        RocksIterator rocksIterator = rocksDB.newIterator();
+        rocksIterator.seekToFirst();
+        while (rocksIterator.isValid()) {
+            byte[] key = rocksIterator.key();
+            byte[] value = rocksIterator.value();
+            data.put(new String(key), new String(value));
+            rocksIterator.next();
+        }
+        return data;
     }
 }

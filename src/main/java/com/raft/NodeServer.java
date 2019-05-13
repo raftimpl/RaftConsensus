@@ -6,6 +6,8 @@ import com.raft.pojo.*;
 import com.raft.rpc.ManageRPCClient;
 import com.raft.rpc.NodeRPCClient;
 import com.raft.rpc.NodeRPCServer;
+import com.raft.snapshot.Snapshot;
+import com.raft.snapshot.SnapshotImpl;
 import com.raft.statemachine.StateMachine;
 import com.raft.statemachine.StateMachineImpl;
 
@@ -43,10 +45,9 @@ public class NodeServer {
 
     private volatile LogModule logModule;
     private volatile StateMachine stateMachine;
-
+    private volatile Snapshot snapshot;
     private String manageServerAddr;
 
-    private volatile boolean hasRegisted;
     private PeerSet peerSet;
 
     private ReentrantLock lock;
@@ -56,6 +57,10 @@ public class NodeServer {
     private Map<Peer, Long> matchIndexMap; // matchIndex.get(id) 表示 follower=id  已经匹配的最大日志索引
 
     private volatile NodeStatus status;
+    private ConcurrentHashMap<String, Response> respMap;
+    private final int RESPMAP_MAXSIZE = 300; // 当客户端请求数达到 RESPMAP_MAXSIZE 时，清空客户端请求 respMap
+
+    private final int SNAPSHOT_SIZE = 5;  //  当应用到的状态机的日志条目是 SNAPSHOT_SIZE 的整数倍时，进行快照处理，更新元数据
 
     public NodeServer() {
         this.status = NodeStatus.FOLLOWER;
@@ -69,6 +74,8 @@ public class NodeServer {
 
         commitIndex = -1;
         lastApplied = -1;
+        // key=客户端请求唯一标识,value=此次请求的响应
+        respMap = new ConcurrentHashMap<>();
 
         // 创建 rpc server 并启动
         rpcServer = new NodeRPCServer(selfPort, this);
@@ -79,6 +86,7 @@ public class NodeServer {
         // 创建日志模块
         logModule = new LogModuleImpl();
         stateMachine = new StateMachineImpl();
+        snapshot = new SnapshotImpl();
 
         // 创建线程池，执行各项任务
         threadPool = Executors.newScheduledThreadPool(4);
@@ -109,6 +117,7 @@ public class NodeServer {
 
         // 启动定时周期性注册当前地址任务
         threadPool.schedule(new RegisterTask(), 0, TimeUnit.MILLISECONDS);
+
     }
 
     public Response register() {
@@ -299,6 +308,7 @@ public class NodeServer {
         nextIndexMap = new HashMap<>();
         matchIndexMap = new HashMap<>();
         List<Peer> otherPeers = peerSet.getOtherPeers();
+        System.out.println("initNextMatchIndex: " + otherPeers);
         long lastIndex = logModule.getLastIndex();
         for (Peer p : otherPeers) {
             nextIndexMap.put(p, lastIndex + 1);
@@ -353,8 +363,7 @@ public class NodeServer {
             prevElectionStamp = System.currentTimeMillis();
             prevHeartBeatStamp = System.currentTimeMillis();
 
-//          System.out.println("接受到来自 " + reqObj.getLeaderId() + " 的心跳 term=" + reqObj.getTerm() + ", " + System.currentTimeMillis());
-
+            System.out.println("---------handleHeartbeat start: from" + reqObj.getLeaderId() + "---prevLogIndex=" + reqObj.getPrevLogIndex() + ",prevLogTerm=" + reqObj.getPrevLogTerm() + "-------");
             // 设置主从关系
             peerSet.setLeader(new Peer(reqObj.getLeaderId()));
             if (status != NodeStatus.FOLLOWER) {
@@ -367,11 +376,17 @@ public class NodeServer {
             // 检验当前日志是否缺少 (重启后的节点很有可能缺少部分日志项)
             long prevLogIndex = reqObj.getPrevLogIndex();
             if (prevLogIndex != -1) { // 说明leader 中有日志
-                LogEntry entry = logModule.read(prevLogIndex);
-                if (entry == null || entry.getTerm() != reqObj.getPrevLogTerm()) {
-                    // 返回给心跳一个标记，提醒让leader 启动发送日志的过程（只用发送给当前节点即可）
-                    System.out.println("当前节点缺少日志");
-                    return AppendEntryResult.yes(Integer.MIN_VALUE); // term =  MIN_VALUE 为特殊标记
+                System.out.println("lastSnapshotIndex=" + logModule.getLastSnapshotIndex());
+                if (prevLogIndex <= logModule.getLastSnapshotIndex()) {
+                    System.out.println("prevLogIndex <= logModule.getLastSnapshotIndex()");
+                    // 不缺少日志，不需要处理，说明当前节点 prevLogIndex 对应的位置已经生成快照，应用到状态机
+                } else {
+                    LogEntry entry = logModule.read(prevLogIndex);
+                    if (entry == null || entry.getTerm() != reqObj.getPrevLogTerm()) {
+                        // 返回给心跳一个标记，提醒让leader 启动发送日志的过程（只用发送给当前节点即可）
+                        System.out.println("当前节点缺少日志," + entry);
+                        return AppendEntryResult.yes(Integer.MIN_VALUE); // term =  MIN_VALUE 为特殊标记
+                    }
                 }
             }
             commitIndex = reqObj.getLeaderCommitIndex();
@@ -379,12 +394,16 @@ public class NodeServer {
             //Follower收到心跳后应用状态机lastIndex
             LogEntry newLogEntry;
             if (lastApplied < commitIndex) {
-                System.out.println("handleHeartbeat: lastApplied=" + lastApplied + ", commitIndex=" + commitIndex);
+                System.out.println("handleHeartbeat 检测到需要提交: lastApplied=" + lastApplied + ", commitIndex=" + commitIndex);
                 for (long i = lastApplied + 1; i <= commitIndex; i++) {
                     newLogEntry = logModule.read(i);
                     stateMachine.apply(newLogEntry);
                 }
                 lastApplied = commitIndex;
+
+                trySnapshot(); // 更新 lastApplied， 尝试是否需要进行快照
+
+
             }
 
         } finally {
@@ -393,12 +412,30 @@ public class NodeServer {
         return AppendEntryResult.yes(currentTerm);
     }
 
+    public void trySnapshot() {
+        if ((lastApplied + 2) % SNAPSHOT_SIZE == 0) { // 避免 lastApplied = -1/0 时也进入
+            // 更新快照
+            LinkedHashMap<String, String> data = stateMachine.getData();
+            int lastSnapshotTerm = logModule.read(lastApplied).getTerm();
+
+            snapshot.updateMetadata(lastApplied, lastSnapshotTerm, data);
+            // 删除 (..., lastApplied] 日志
+            long lastSnapshotIndex = logModule.getLastSnapshotIndex();
+            logModule.removeRange(lastSnapshotIndex + 1, lastApplied);
+            logModule.updateLastSnapshotTerm(lastSnapshotTerm);
+            logModule.updateLastSnapshotIndex(lastApplied);
+        }
+    }
+
     class HeartbeatTask implements Runnable {
         @Override
         public void run() {
             try {
                 if (status != NodeStatus.LEADER)
                     return;
+                if (respMap.size() > RESPMAP_MAXSIZE) {  // 清空
+                    respMap.clear();
+                }
                 long current = System.currentTimeMillis();
                 if (current - prevHeartBeatStamp < heartbeatTimeout) { // 每隔 heartBeatTimeOut 才发送新的心跳
                     return;
@@ -457,8 +494,8 @@ public class NodeServer {
                         }
                     });
                 }
-
             } catch (Exception e) {
+                e.printStackTrace();
                 System.out.println("heartbeat 出现异常");
             }
         }
@@ -477,7 +514,9 @@ public class NodeServer {
             return ClientResp.no("no leader");
         request.setUrl(peerSet.getLeader().getAddr());
         System.out.println("redirect to :" + peerSet.getLeader().getAddr());
-        return rpcClient.send(request);
+        Response resp = rpcClient.send(request);
+        respMap.put(request.getId(), resp);
+        return resp;
     }
 
 
@@ -487,6 +526,11 @@ public class NodeServer {
             return redirect(request);
         }
         // 当前节点是 leader
+
+        // 当前请求已经处理过
+        if (respMap.containsKey(request.getId())) {
+            return respMap.get(request.getId());
+        }
 
         // get 查询请求
         if (request.getReqObj().getType() == Command.GET) {
@@ -561,6 +605,8 @@ public class NodeServer {
             stateMachine.print();
             System.out.println("lastapplied=" + lastApplied);
 
+            trySnapshot();
+
             return ClientResp.yes("提交成功");
         } else {
             // 复制失败,同时删除 leader 下的此日志之后的所有日志
@@ -586,23 +632,101 @@ public class NodeServer {
             }
             lastApplied = commitIndex;
 
+            trySnapshot();
+
             return ClientResp.no("提交失败");
         }
     }
 
-    public boolean sendAppendEntry(Peer p, long lastIndex) {
+    public boolean sendInstallSnapshotRPC(Peer p) {
+        System.out.println("-------sendInstallSnapshotRPC-------------");
+        Request<SnapshotParam> installSnapshot = new Request<>();
+        installSnapshot.setType(Request.RequestType.INSTALL_SNAPSHOT);
+        installSnapshot.setUrl(p.getAddr());
 
+        SnapshotParam param = new SnapshotParam();
+        param.setTerm(currentTerm);
+        param.setDone(true);
+        param.setLeaderId(peerSet.getSelf().getAddr());
+        SnapshotMetadata metadata = snapshot.getMetadata();
+        param.setData(metadata.getData());
+        param.setLastIncludedIndex(metadata.getLastIncludedIndex());
+        param.setLastIncludedTerm(metadata.getLastIncludedTerm());
+        param.setOffset(0);
+
+        installSnapshot.setReqObj(param);
+
+        Response resp = rpcClient.send(installSnapshot);
+
+        int term = (int) resp.getResObj();
+        if (term > currentTerm) {
+            currentTerm = term;
+            status = NodeStatus.FOLLOWER;
+            return false;
+        }
+        return true;
+    }
+
+    public Response handleInstallSnapshotRPC(Request<SnapshotParam> request) {
+        System.out.println("-------handleInstallSnapshotRPC-----------------");
+        SnapshotParam param = request.getReqObj();
+        Response resp = new Response();
+
+        if (param.getTerm() < currentTerm) {
+            resp.setObj(currentTerm);
+            return resp;
+        }
+        currentTerm = param.getTerm();
+        resp.setObj(currentTerm);
+
+        snapshot.updateMetadata(param.getLastIncludedIndex(), param.getLastIncludedTerm(), param.getData());
+        logModule.removeRange(logModule.getLastSnapshotIndex() + 1, logModule.getLastIndex());
+        logModule.updateLastSnapshotIndex(param.getLastIncludedIndex());
+        logModule.updateLastIndex(param.getLastIncludedIndex());
+        logModule.updateLastSnapshotTerm(param.getLastIncludedTerm());
+
+        lastApplied = param.getLastIncludedIndex();
+        commitIndex = param.getLastIncludedIndex();
+
+        // 状态机存储快照内的内容
+        LinkedHashMap<String, String> data = param.getData();
+        Set<Map.Entry<String, String>> entries = data.entrySet();
+        for (Map.Entry<String, String> entry : entries) {
+            stateMachine.store(entry.getKey(), entry.getValue());
+        }
+
+        return resp;
+    }
+
+    public boolean sendAppendEntry(Peer p, long lastIndex) {
+        System.out.println("----------------sendAppendEntry to:" + p + "----------------------");
         // 参数 peer , lastIndex,
         long begin = System.currentTimeMillis(), end = begin;
         while (end - begin < 20 * 1000L) {
+            // 将[nextIndex, newEntryIndex] 日志全部发送出去
+            List<LogEntry> entryList = new ArrayList<>();
+            long nextIndex = nextIndexMap.getOrDefault(p, lastIndex);
+            // 如果 nextIndex <= lastIncludedIndex(在快照中，发送快照信息)
+            System.out.println("nextIndex=" + nextIndex + ",logModule.getLastSnapshotIndex()=" + logModule.getLastSnapshotIndex() + ",lastIndex=" + lastIndex);
+
+            if (nextIndex > lastIndex) { // 说明不是新添加的日志导致调用该方法，而是检测到缺少日志
+                System.out.println(nextIndex + ">" + lastIndex);
+                nextIndex = lastIndex;
+                nextIndexMap.put(p, nextIndex);
+            }
+
+            if (nextIndex <= logModule.getLastSnapshotIndex()) {
+                System.out.println("1");
+                sendInstallSnapshotRPC(p);
+                nextIndex = logModule.getLastSnapshotIndex() + 1;
+                nextIndexMap.put(p, nextIndex);
+            }
+
             AppendEntryParam param = new AppendEntryParam();
             param.setTerm(currentTerm);
             param.setLeaderId(peerSet.getSelf().getAddr());
             param.setLeaderCommitIndex(commitIndex);
 
-            // 将[nextIndex, newEntryIndex] 日志全部发送出去
-            List<LogEntry> entryList = new ArrayList<>();
-            Long nextIndex = nextIndexMap.get(p);
 //          if (entry.getIndex() >= nextIndex) {
             for (long i = nextIndex; i <= lastIndex; i++) {
                 LogEntry e = logModule.read(i);
@@ -616,10 +740,10 @@ public class NodeServer {
             param.setEntries(entryList);
 
             // 注意: prevLogIndex prevLogTerm 表示的是即将发送的所有日志项的 前一个日志
-            LogEntry lastEntry = logModule.read(nextIndex - 1); // 因为当前日志中已经添加了 新的日志项
-            if (lastEntry != null) {
-                param.setPrevLogTerm(lastEntry.getTerm());
-                param.setPrevLogIndex(lastEntry.getIndex());
+            LogEntry prevEntry = logModule.read(nextIndex - 1); // 因为当前日志中已经添加了 新的日志项
+            if (prevEntry != null) {
+                param.setPrevLogTerm(prevEntry.getTerm());
+                param.setPrevLogIndex(prevEntry.getIndex());
             }
             Request<AppendEntryParam> req = new Request<>();
             req.setUrl(p.getAddr());
@@ -662,7 +786,7 @@ public class NodeServer {
         try {
             if (param.getTerm() < currentTerm)
                 return AppendEntryResult.no(currentTerm);
-            System.out.println("-----------handleAppendEntry-----------");
+            System.out.println("-----------handleAppendEntry start-----------");
             System.out.println(param);
 
             prevHeartBeatStamp = System.currentTimeMillis();
@@ -674,20 +798,40 @@ public class NodeServer {
             if (currentTerm != param.getTerm()) {
                 currentTerm = param.getTerm();
             }
-//            System.out.println("1");
-            if (param.getPrevLogIndex() != -1 && logModule.getLastIndex() != -1) { // 说明当前节点有日志
-                LogEntry matchEntry = logModule.read(param.getPrevLogIndex());
-                if (matchEntry != null) {
-                    if (matchEntry.getTerm() != param.getPrevLogTerm()) {// prevLogIndex 处的任期号 != prevLogTerm
-//                        System.out.println("2");
-                        return AppendEntryResult.no(currentTerm); // 返回 false, 让 leader 的 index-1
-                    }
-                } else {
-//                    System.out.println("3");
-                    // 在当前找不到  prevLogIndex
+            if (param.getEntries().size() == 0) { // 已经接受到压缩快照，压缩快照后面恰好已经没有日志了
+                return AppendEntryResult.yes(currentTerm);
+            }
+
+            if (logModule.getLastIndex() == -1) {
+                if (param.getPrevLogIndex() != -1) {
                     return AppendEntryResult.no(currentTerm);
+                } else {
+                    // 复制:
+                    System.out.println("复制");
+                }
+            } else {
+                // !=-1，当前节点有日志
+                if (param.getPrevLogIndex() == -1) {
+                    return AppendEntryResult.no(currentTerm);
+                } else {
+                    LogEntry matchEntry = logModule.read(param.getPrevLogIndex());
+                    System.out.println("matchEntry:" + matchEntry);
+                    if (matchEntry != null) {
+                        if (matchEntry.getTerm() != param.getPrevLogTerm()) {// prevLogIndex 处的任期号 != prevLogTerm
+                            System.out.println("2");
+                            return AppendEntryResult.no(currentTerm); // 返回 false, 让 leader 的 index-1
+                        } else {
+                            // 找到：复制
+                            System.out.println("找到：复制");
+                        }
+                    } else {
+                        System.out.println("3");
+                        // 在当前节点找不到  prevLogIndex
+                        return AppendEntryResult.no(currentTerm);
+                    }
                 }
             }
+
             // 第一次添加日志 或者 prevLog 在当前节点中找到匹配的
             int i = 0;
 
@@ -710,6 +854,7 @@ public class NodeServer {
 
             for (; i < param.getEntries().size(); i++) {
 //                System.out.println("for: " + param.getEntries().get(i));
+                System.out.println("write " + param.getEntries().get(i));
                 logModule.write(param.getEntries().get(i));
             }
 
@@ -724,6 +869,7 @@ public class NodeServer {
 
         } finally {
             lock.unlock();
+            System.out.println("-----------handleAppendEntry over-----------");
         }
 
 
@@ -739,8 +885,15 @@ public class NodeServer {
     class PrintTask implements Runnable {
         @Override
         public void run() {
+            System.out.println("\n\n---------------------打印日志、状态机、快照信息" + new Date(System.currentTimeMillis()).toString() + "---------------------------");
             logModule.printAll();
             stateMachine.print();
+            SnapshotMetadata metadata = snapshot.getMetadata();
+            if (metadata != null) {
+                System.out.println("---------快照--------");
+                System.out.println(metadata);
+            }
+            System.out.println("\n\n");
         }
     }
 

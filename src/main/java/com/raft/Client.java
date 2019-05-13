@@ -28,19 +28,35 @@ public class Client {
         return p;
     }
 
+    @Test
+    public void testSnapshot() {
+        NodeRPCClient rpcClient = new NodeRPCClient();
+        Request<Command> request1 = new Request<>();
+        Peer p = getRandomAddr();
+        System.out.println(p);
+
+        Command c1 = new Command("a", "9999", Command.PUT);
+        request1.setReqObj(c1);
+        request1.setType(Request.RequestType.CLIENT);
+        request1.setDesc("发送put请求");
+        request1.setUrl(p.getAddr());
+
+
+        ClientResp resp = (ClientResp) rpcClient.send(request1);
+
+    }
 
     @Test
     public void test() {
         NodeRPCClient rpcClient = new NodeRPCClient();
         Request<Command> request1 = new Request<>();
 
-        Command c1 = new Command("a", "111", Command.PUT);
+        Command c1 = new Command("a", "1111", Command.PUT);
         Command c2 = new Command("b", "222", Command.PUT);
         Command c3 = new Command("c", "333", Command.PUT);
 
         Peer p = getRandomAddr();
         System.out.println(p);
-
         request1.setReqObj(c1);
         request1.setType(Request.RequestType.CLIENT);
         request1.setDesc("发送put请求");
@@ -48,20 +64,14 @@ public class Client {
         ClientResp resp = (ClientResp) rpcClient.send(request1);
         System.out.println("c1Result: =" + resp);
 
-        Request request2 = new Request();
-        request2.setType(Request.RequestType.CLIENT);
-        request2.setDesc("发送put请求");
-        request2.setUrl(p.getAddr());
-        request2.setReqObj(c2);
-        ClientResp resp2 = (ClientResp) rpcClient.send(request2);
+        request1.setReqObj(c2);
+
+        ClientResp resp2 = (ClientResp) rpcClient.send(request1);
         System.out.println("c2Result: =" + resp2);
 
-        Request request3 = new Request();
-        request3.setType(Request.RequestType.CLIENT);
-        request3.setDesc("发送put请求");
-        request3.setUrl(p.getAddr());
-        request3.setReqObj(c3);
-        ClientResp resp3 = (ClientResp) rpcClient.send(request3);
+        request1.setReqObj(c3);
+        ClientResp resp3 = (ClientResp) rpcClient.send(request1);
+
         System.out.println("c3Result: =" + resp3);
     }
 
@@ -72,7 +82,7 @@ public class Client {
         Peer p = getRandomAddr();
         System.out.println(p);
 
-        Command c1 = new Command("d", "444", Command.PUT);
+        Command c1 = new Command("d", "111", Command.PUT);
 
         request1.setReqObj(c1);
         request1.setType(Request.RequestType.CLIENT);
@@ -89,14 +99,13 @@ public class Client {
         Peer p = getRandomAddr();
         System.out.println(p);
 
-        Command c1 = new Command("e", "555", Command.PUT);
+        Command c1 = new Command("z", "555", Command.PUT);
         request1.setReqObj(c1);
         request1.setType(Request.RequestType.CLIENT);
         request1.setDesc("发送put请求");
         request1.setUrl(p.getAddr());
         ClientResp resp = (ClientResp) rpcClient.send(request1);
         System.out.println("c1Result: =" + resp);
-
 
     }
 
@@ -106,8 +115,7 @@ public class Client {
         Request<Command> request1 = new Request<>();
         Peer p = getRandomAddr();
         System.out.println(p);
-
-        Command c1 = new Command("a", "666", Command.PUT);
+        Command c1 = new Command("h", "6666", Command.PUT);
         request1.setReqObj(c1);
         request1.setType(Request.RequestType.CLIENT);
         request1.setDesc("发送put请求");

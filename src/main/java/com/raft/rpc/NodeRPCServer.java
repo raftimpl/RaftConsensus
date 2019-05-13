@@ -3,7 +3,10 @@ package com.raft.rpc;
 import com.alipay.remoting.BizContext;
 import com.alipay.remoting.rpc.RpcServer;
 import com.raft.NodeServer;
-import com.raft.pojo.*;
+import com.raft.pojo.AppendEntryParam;
+import com.raft.pojo.Request;
+import com.raft.pojo.Response;
+import com.raft.pojo.VoteParam;
 
 /**
  * created by Ethan-Walker on 2019/4/9
@@ -34,6 +37,8 @@ public class NodeRPCServer {
             return node.handleAppendEntry((AppendEntryParam) request.getReqObj());
         } else if (request.getType() == Request.RequestType.QUERY_ENTRY) {
             return node.handleGetRequest(request);
+        } else if (request.getType() == Request.RequestType.INSTALL_SNAPSHOT) {
+            return node.handleInstallSnapshotRPC(request);
         }
         return null;
     }
