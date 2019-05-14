@@ -179,6 +179,75 @@ public class NodeServer {
         }
     }
 
+    /**
+     * 选举之前测试当前节点是否和集群中大多数节点能够成功通信，如果能够，才进行选举
+     * 否则可能因为当前节点在较小的网络分区（少于半数节点）导致一直选举失败，term 不断增大
+     *
+     * @return
+     */
+    private boolean preVote() {
+        updatePeerSetInfo();
+        List<Peer> otherPeers = peerSet.getOtherPeers();
+        System.out.println("preVote: otherPeers=" + otherPeers);
+        List<Future<Response>> list = new ArrayList<>();
+        for (Peer p : otherPeers) {
+            Request pingReq = new Request();
+            pingReq.setUrl(p.getAddr());
+            pingReq.setType(Request.RequestType.PING);
+            Future<Response> future = threadPool.submit(new Callable<Response>() {
+                @Override
+                public Response call() throws Exception {
+                    return rpcClient.send(pingReq);
+                }
+            });
+
+            list.add(future);
+        }
+        CountDownLatch latch = new CountDownLatch(otherPeers.size());
+        AtomicInteger respCount = new AtomicInteger(1);
+        for (Future<Response> f : list) {
+            threadPool.execute(new Runnable() {
+                @Override
+                public void run() {
+                    Response resp = null;
+                    try {
+                        resp = f.get(3000, TimeUnit.MILLISECONDS);
+                        if (resp != null) {
+                            respCount.incrementAndGet();
+                        }
+                    } catch (InterruptedException e) {
+                        e.printStackTrace();
+                    } catch (ExecutionException e) {
+                        e.printStackTrace();
+                    } catch (TimeoutException e) {
+                        e.printStackTrace();
+                    } finally {
+                        latch.countDown();
+                    }
+                }
+            });
+
+        }
+        try {
+            latch.await(5000, TimeUnit.MILLISECONDS);
+        } catch (InterruptedException e) {
+            e.printStackTrace();
+        }
+        System.out.println("respCount=" + respCount.get());
+        if (respCount.get() > otherPeers.size() / 2) {
+            System.out.println("preVote: true");
+            return true;
+        }
+        System.out.println("preVote: false");
+
+        return false;
+    }
+
+    public Response handlePingReq(Request req) {
+        Response resp = new Response();
+        return resp;
+    }
+
     class ElectionTask implements Runnable {
         @Override
         public void run() {
@@ -190,6 +259,10 @@ public class NodeServer {
                 long current = System.currentTimeMillis();
                 if (current - prevElectionStamp < electionTimeout) {
                     // 选举时间未超时，不需要重新选举
+                    return;
+                }
+
+                if (!preVote()) {
                     return;
                 }
                 Date date = new Date(System.currentTimeMillis());
@@ -204,7 +277,7 @@ public class NodeServer {
                 currentTerm = currentTerm + 1;
                 voteFor = peerSet.getSelf().getAddr();
 
-                updatePeerSetInfo();
+                // updatePeerSetInfo();  preVote 阶段已经更新了
 
                 // 2. 获取其他节点信息, 向其他各个节点发送 投票请求
                 List<Peer> otherPeers = peerSet.getOtherPeers();
@@ -249,7 +322,9 @@ public class NodeServer {
                         @Override
                         public void run() {
                             try {
-                                VoteResult v = (VoteResult) f.get();
+                                Response response = f.get(3000, TimeUnit.MILLISECONDS);
+                                if (response == null) return;
+                                VoteResult v = (VoteResult) response;
                                 if (v.isVoteGranted()) {
                                     countYes.incrementAndGet();
                                 } else {
@@ -261,6 +336,8 @@ public class NodeServer {
                             } catch (InterruptedException e) {
                                 e.printStackTrace();
                             } catch (ExecutionException e) {
+                                e.printStackTrace();
+                            } catch (TimeoutException e) {
                                 e.printStackTrace();
                             } finally {
                                 latch.countDown();
@@ -308,7 +385,7 @@ public class NodeServer {
         nextIndexMap = new HashMap<>();
         matchIndexMap = new HashMap<>();
         List<Peer> otherPeers = peerSet.getOtherPeers();
-        System.out.println("initNextMatchIndex: " + otherPeers);
+        // System.out.println("initNextMatchIndex: " + otherPeers);
         long lastIndex = logModule.getLastIndex();
         for (Peer p : otherPeers) {
             nextIndexMap.put(p, lastIndex + 1);
@@ -329,6 +406,8 @@ public class NodeServer {
                 return VoteResult.no(currentTerm);
             }
 //        if (voteFor == null || voteFor == param.getCandidateId()) { 不要根据 voteFor 判断是否可以支持投票，而是根据任期 term> currentTerm 决定是否投票
+
+            // param.getTerm() > currentTerm, 还要判断candidate节点日志是否比当前节点新
             LogEntry lastEntry = null;
             if ((lastEntry = logModule.getLast()) != null) {
                 if (lastEntry.getTerm() > param.getPrevLogTerm() || lastEntry.getIndex() > param.getPrevLogIndex()) {
@@ -336,6 +415,7 @@ public class NodeServer {
                     return VoteResult.no(currentTerm);
                 }
             }
+            currentTerm = param.getTerm();
             System.out.println("同意投票-------------------");
             status = NodeStatus.FOLLOWER;
             voteFor = param.getCandidateId();

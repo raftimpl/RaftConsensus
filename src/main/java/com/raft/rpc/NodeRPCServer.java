@@ -39,6 +39,8 @@ public class NodeRPCServer {
             return node.handleGetRequest(request);
         } else if (request.getType() == Request.RequestType.INSTALL_SNAPSHOT) {
             return node.handleInstallSnapshotRPC(request);
+        } else if (request.getType() == Request.RequestType.PING) {
+            return node.handlePingReq(request);
         }
         return null;
     }

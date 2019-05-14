@@ -61,6 +61,7 @@ public class Request<T> implements Serializable {
         HEARTBEAT,
         CLIENT, // 客户端发送来的请求
         QUERY_ENTRY,
-        INSTALL_SNAPSHOT
+        INSTALL_SNAPSHOT,
+        PING
     }
 }
