@@ -1,34 +1,35 @@
 package com.raft.demo;
 
-import org.rocksdb.Options;
-import org.rocksdb.RocksDB;
-import org.rocksdb.RocksDBException;
+import com.raft.pojo.SnapshotMetadata;
+import com.raft.util.MFileUtils;
+import org.junit.Test;
+
+import java.io.File;
+import java.util.ArrayList;
+import java.util.List;
 
 /**
  * created by Ethan-Walker on 2019/4/15
  */
 public class test {
     public static void main(String[] args) {
-        RocksDB.loadLibrary();
-        Options options = new Options();
-        options.setCreateIfMissing(true);
-        String logsDir = "./db/8001/logs";
-        final byte[] LAST_INDEX_KEY = "LAST_INDEX_KEY".getBytes();
-        try {
-            RocksDB db = RocksDB.open(options, logsDir);
 
-            byte[] lastIndexBys = db.get(LAST_INDEX_KEY);
-            System.out.println(Long.parseLong(new String(lastIndexBys)));
+        String logsDir = "./db/8001/snapshot/metadata";
 
-            db.put(LAST_INDEX_KEY, "0".getBytes());
-
-            byte[] lastIndexBys2 = db.get(LAST_INDEX_KEY);
-            System.out.println(Long.parseLong(new String(lastIndexBys2)));
+        SnapshotMetadata metadata = MFileUtils.readSnapshotMetadata(new File(logsDir));
+        System.out.println(metadata);
 
 
-        } catch (RocksDBException e) {
-            e.printStackTrace();
-        }
+        List list = new ArrayList();
+        list.add(null);
 
+    }
+
+
+    @Test
+    public void test() {
+        Object a = null;
+        String b = (String) a;
+        System.out.println(a);
     }
 }
