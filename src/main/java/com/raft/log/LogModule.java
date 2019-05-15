@@ -9,6 +9,8 @@ public interface LogModule {
 
     void write(LogEntry entry);
 
+    void update(LogEntry entry);
+
     LogEntry read(long index);
 
     LogEntry getLast();

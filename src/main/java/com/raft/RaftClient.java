@@ -6,7 +6,6 @@ import com.alibaba.fastjson.JSONObject;
 import com.raft.pojo.*;
 import com.raft.rpc.NodeRPCClient;
 import org.apache.commons.io.FileUtils;
-import org.junit.Test;
 
 import java.io.File;
 import java.io.IOException;
@@ -73,13 +72,13 @@ public class RaftClient {
         req.setReqObj(c);
 
         long current = System.currentTimeMillis();
-        long end = current + 1000 * 60; // 60s 还不返回结果，超时
+        long end = current + 1000 * 30; // 30s 还不返回结果，超时
         while (System.currentTimeMillis() < end) {
             String p = getRandom();
             req.setUrl(p);
             Response resp = rpcClient.send(req);
             if (resp != null) {
-                return (Boolean) ((ClientResp) resp).getResult();
+                return (Boolean) (((ClientResp) resp).getResult());
             }
         }
         // 超时

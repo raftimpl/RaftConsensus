@@ -75,6 +75,21 @@ public class LogModuleImpl implements LogModule {
 //        System.out.println("--------write-over----------------");
     }
 
+    public void update(LogEntry entry){
+        lock.lock();
+//        System.out.println("-----------to write: " + entry + "------------");
+        try {
+            rocksDB.put(convertToBytes(entry.getIndex()), JSON.toJSONBytes(entry));
+            updateLastIndex(entry.getIndex());
+//            System.out.println("update lastIndex: " + getLastIndex());
+//            System.out.println("after append ,last entry= " + getLast());
+        } catch (RocksDBException e) {
+            e.printStackTrace();
+        } finally {
+            lock.unlock();
+        }
+    }
+
     //由索引值得到LogEntry
     public LogEntry read(long index) {
         if (index == getLastSnapshotIndex()) {

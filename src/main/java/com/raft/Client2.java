@@ -1,8 +1,5 @@
 package com.raft;
 
-import com.raft.pojo.*;
-import com.raft.rpc.ManageRPCClient;
-import com.raft.rpc.NodeRPCClient;
 import org.junit.Test;
 
 /**
@@ -10,50 +7,33 @@ import org.junit.Test;
  */
 public class Client2 {
 
-    public Peer getRandomAddr() {
-        ManageRPCClient client = new ManageRPCClient();
-        String manageServer = "localhost:8889";
-
-        ClusterRequest request = new ClusterRequest();
-        request.setAddr(manageServer);
-        request.setRequestType(ClusterRequest.RequestType.GET_RANDOM_NODE);
-
-        Response res = client.send(request);
-        Object obj = res.getResObj();
-        Peer p = null;
-        if (obj != null) {
-            p = (Peer) obj;
-        }
-        return p;
+    /**
+     * Put 方法测试
+     */
+    @Test
+    public void test() {
+        System.out.println(RaftClient.put("a", "111"));
+        System.out.println(RaftClient.put("b", "222"));
+        System.out.println(RaftClient.put("c", "333"));
+        System.out.println(RaftClient.put("d", "444"));
+        System.out.println(RaftClient.put("e", "555"));
     }
 
     @Test
-    public void test() {
+    public void test2() {
+        System.out.println(RaftClient.put("z", "111111"));
+    }
 
-        Peer p = getRandomAddr();
-        NodeRPCClient client = new NodeRPCClient();
-        Request<Command> request = new Request<>();
-        Command c1 = new Command("a", Command.GET);
-        Command c2 = new Command("b", Command.GET);
-        Command c3 = new Command("c", Command.GET);
-
-        String addr = p.getAddr();
-
-        request.setType(Request.RequestType.CLIENT);
-        request.setUrl(addr);
-
-        request.setReqObj(c1);
-        ClientResp result1 = (ClientResp) client.send(request);
-        System.out.println("查询 a 得到结果: " + result1.getResult());
-
-        request.setReqObj(c2);
-        ClientResp result2 = (ClientResp) client.send(request);
-        System.out.println("查询 b 得到结果: " + result2.getResult());
-
-        request.setReqObj(c3);
-        ClientResp result3 = (ClientResp) client.send(request);
-        System.out.println("查询 c 得到结果: " + result3.getResult());
-
+    /**
+     * Get 方法测试
+     */
+    @Test
+    public void test3() {
+        System.out.println(RaftClient.getKey("a"));
+        System.out.println(RaftClient.getKey("b"));
+        System.out.println(RaftClient.getKey("c"));
+        System.out.println(RaftClient.getKey("d"));
+        System.out.println(RaftClient.getKey("z"));
     }
 
 }

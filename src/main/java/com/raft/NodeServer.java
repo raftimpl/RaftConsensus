@@ -516,14 +516,14 @@ public class NodeServer {
             LogEntry newLogEntry;
             if (lastApplied < commitIndex) {
                 System.out.println("handleHeartbeat 检测到需要提交: lastApplied=" + lastApplied + ", commitIndex=" + commitIndex);
+
                 for (long i = lastApplied + 1; i <= commitIndex; i++) {
                     newLogEntry = logModule.read(i);
                     stateMachine.apply(newLogEntry);
+                    lastApplied = i;
+                    // 可能一次apply多条日志，可能中间有一条日志恰到达
+                    trySnapshot();
                 }
-                lastApplied = commitIndex;
-
-                trySnapshot(); // 更新 lastApplied， 尝试是否需要进行快照
-
 
             }
 
@@ -631,8 +631,10 @@ public class NodeServer {
     }
 
     public Response redirect(Request request) {
-        if (peerSet.getLeader() == null)
-            return ClientResp.no("no leader");
+        if (peerSet.getLeader() == null) {
+            return ClientResp.no(false);
+
+        }
         request.setUrl(peerSet.getLeader().getAddr());
         System.out.println("redirect to :" + peerSet.getLeader().getAddr());
         Response resp = rpcClient.send(request);
@@ -717,7 +719,7 @@ public class NodeServer {
 
             trySnapshot();
 
-            return ClientResp.yes("提交成功");
+            return ClientResp.yes(true);
         } else {
             // 复制失败,同时删除 leader 下的此日志之后的所有日志
             logModule.removeFromIndex(entry.getIndex());
@@ -744,7 +746,7 @@ public class NodeServer {
 
             trySnapshot();
 
-            return ClientResp.no("提交失败");
+            return ClientResp.no(false);
         }
     }
 
@@ -963,6 +965,8 @@ public class NodeServer {
         // 第一次添加日志 或者 prevLog 在当前节点中找到匹配的
         int i = 0;
 
+//      这会导致未被确认提交的日志log，index 和 term 和新提交的日志项相同，导致日志log没有被覆盖
+/*
         for (; i < param.getEntries().size(); i++) {
             LogEntry add = param.getEntries().get(i);
             LogEntry entry = logModule.read(add.getIndex());
@@ -979,20 +983,14 @@ public class NodeServer {
                 break;
             }
         }
+*/
 
         for (; i < param.getEntries().size(); i++) {
 //                System.out.println("for: " + param.getEntries().get(i));
             System.out.println("write " + param.getEntries().get(i));
-            logModule.write(param.getEntries().get(i));
+            logModule.update(param.getEntries().get(i));
         }
 
-
-            /*            // 更新 leaderCommit
-            if (param.getLeaderCommitIndex() > commitIndex) {
-                commitIndex = Math.min(param.getLeaderCommitIndex(), logModule.getLastIndex());
-//                lastApplied = commitIndex;
-            }*/
-//            System.out.println("4");
         System.out.println("-----------handleAppendEntry over-----------");
         return AppendEntryResult.yes(currentTerm);
 
