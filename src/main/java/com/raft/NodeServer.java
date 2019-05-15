@@ -1,16 +1,21 @@
 package com.raft;
 
+import com.alibaba.fastjson.JSON;
+import com.alibaba.fastjson.JSONArray;
+import com.alibaba.fastjson.JSONObject;
 import com.raft.log.LogModule;
 import com.raft.log.LogModuleImpl;
 import com.raft.pojo.*;
-import com.raft.rpc.ManageRPCClient;
 import com.raft.rpc.NodeRPCClient;
 import com.raft.rpc.NodeRPCServer;
 import com.raft.snapshot.Snapshot;
 import com.raft.snapshot.SnapshotImpl;
 import com.raft.statemachine.StateMachine;
 import com.raft.statemachine.StateMachineImpl;
+import org.apache.commons.io.FileUtils;
 
+import java.io.File;
+import java.io.IOException;
 import java.text.SimpleDateFormat;
 import java.util.*;
 import java.util.concurrent.*;
@@ -39,17 +44,15 @@ public class NodeServer {
 
     private static NodeRPCServer rpcServer;
     private static NodeRPCClient rpcClient;
-    private static ManageRPCClient registerClient;
+//    private static ManageRPCClient registerClient;
 
     private static ScheduledExecutorService threadPool;
 
     private volatile LogModule logModule;
     private volatile StateMachine stateMachine;
     private volatile Snapshot snapshot;
-    private String manageServerAddr;
-
+    //    private String manageServerAddr;
     private PeerSet peerSet;
-
     private ReentrantLock lock;
 
     // leader 中不稳定存在
@@ -66,7 +69,7 @@ public class NodeServer {
         this.status = NodeStatus.FOLLOWER;
     }
 
-    public void init(String selfAddr, int selfPort, String manageServerAddr) {
+    public void init(String selfAddr, int selfPort) {
 
         // 默认初始状态 follower
         status = NodeStatus.FOLLOWER;
@@ -81,12 +84,36 @@ public class NodeServer {
         rpcServer = new NodeRPCServer(selfPort, this);
         rpcServer.start();
         rpcClient = new NodeRPCClient();
-        registerClient = new ManageRPCClient();
+//        registerClient = new ManageRPCClient();
 
         // 创建日志模块
         logModule = new LogModuleImpl();
         stateMachine = new StateMachineImpl();
         snapshot = new SnapshotImpl();
+
+        // 设置当前节点信息
+        peerSet = new PeerSet();
+        Peer cur = new Peer(selfAddr, selfPort);
+        peerSet.setSelf(cur);
+
+        List<Peer> otherPeerSet = logModule.getOtherPeerSet();
+
+        if (otherPeerSet == null || otherPeerSet.size() == 0) {
+            // 读取cluster.json 文件
+            initPeerSet();
+        } else {
+            peerSet.setOtherPeers(otherPeerSet);
+            ArrayList<Peer> peers = new ArrayList<>(otherPeerSet);
+            peers.add(cur);
+            peerSet.setSet(peers);
+        }
+        System.out.println("otherPeers: " + peerSet.getOtherPeers());
+
+        // 获取当前任期
+        LogEntry entry = logModule.getLast();
+        if (entry != null) {        // entry==null, 说明任期为 0, 默认值
+            currentTerm = entry.getTerm();
+        }
 
         // 创建线程池，执行各项任务
         threadPool = Executors.newScheduledThreadPool(4);
@@ -102,23 +129,12 @@ public class NodeServer {
         // 设置 lastApplied
         commitIndex = lastApplied = stateMachine.getLastApplied();
 
-        // 获取当前任期
-        LogEntry entry = logModule.getLast();
-        if (entry != null) {
-            currentTerm = entry.getTerm();
-        }
-        // entry==null, 说明任期为 0, 默认值
-
-        this.manageServerAddr = manageServerAddr;
-        // 设置节点信息
-        peerSet = new PeerSet();
-        Peer cur = new Peer(selfAddr, selfPort);
-        peerSet.setSelf(cur);
 
         // 启动定时周期性注册当前地址任务
-        threadPool.schedule(new RegisterTask(), 0, TimeUnit.MILLISECONDS);
+//        threadPool.schedule(new RegisterTask(), 0, TimeUnit.MILLISECONDS);
 
     }
+/*
 
     public Response register() {
         ClusterRequest<Peer> request = new ClusterRequest<>();
@@ -128,14 +144,37 @@ public class NodeServer {
         return registerClient.send(request);
     }
 
+*/
+
+    public void initPeerSet() {
+
+        List<Peer> otherPeers = new ArrayList<>();
+        try {
+            String s = FileUtils.readFileToString(new File("./cluster.json"));
+            JSONObject jsonObject = JSON.parseObject(s);
+            JSONArray servers = jsonObject.getJSONArray("servers");
+            for (int i = 0; i < servers.size(); i++) {
+                String addr = servers.getJSONObject(i).getString("addr");
+                if (!addr.equals(peerSet.getSelf().getAddr())) {
+                    otherPeers.add(new Peer(addr));
+                }
+            }
+            // 同时保存到日志文件中
+            logModule.updateOtherPeerSet(otherPeers);
+
+        } catch (IOException e) {
+            e.printStackTrace();
+        }
+        peerSet.setOtherPeers(otherPeers);
+        ArrayList<Peer> peers = new ArrayList<>(otherPeers);
+        peers.add(peerSet.getSelf());
+        peerSet.setSet(peers);
+
+    }
+
+
     public void updatePeerSetInfo() {
-        ClusterRequest request = new ClusterRequest();
-        request.setRequestType(ClusterRequest.RequestType.GET_ALL_NODE);
-        request.setAddr(manageServerAddr);
-
-        Response res = registerClient.send(request);
-
-        Object resObj = res.getResObj();
+/*
         if (resObj != null) {
             List<Peer> peers = (List<Peer>) resObj;
             List<Peer> otherPeers = new ArrayList<>();
@@ -147,8 +186,9 @@ public class NodeServer {
             peerSet.setOtherPeers(otherPeers);
             peerSet.setSet(peers);
         }
+*/
     }
-
+/*
     class RegisterTask implements Runnable {
         @Override
         public void run() {
@@ -178,6 +218,7 @@ public class NodeServer {
 
         }
     }
+*/
 
     /**
      * 选举之前测试当前节点是否和集群中大多数节点能够成功通信，如果能够，才进行选举
@@ -186,7 +227,7 @@ public class NodeServer {
      * @return
      */
     private boolean preVote() {
-        updatePeerSetInfo();
+//        updatePeerSetInfo();
         List<Peer> otherPeers = peerSet.getOtherPeers();
         System.out.println("preVote: otherPeers=" + otherPeers);
         List<Future<Response>> list = new ArrayList<>();
@@ -539,7 +580,7 @@ public class NodeServer {
                 List<Peer> otherPeers = peerSet.getOtherPeers();
 //                System.out.println("otherpeers:" + otherPeers);
 
-                updatePeerSetInfo();
+//                updatePeerSetInfo();
 
                 for (Peer peer : otherPeers) {
                     Request<AppendEntryParam> request = new Request<>();
@@ -589,7 +630,7 @@ public class NodeServer {
         return ClientResp.yes(value);
     }
 
-    public Response redirect(Request<Command> request) {
+    public Response redirect(Request request) {
         if (peerSet.getLeader() == null)
             return ClientResp.no("no leader");
         request.setUrl(peerSet.getLeader().getAddr());
@@ -599,27 +640,16 @@ public class NodeServer {
         return resp;
     }
 
+    /**
+     * put 请求只允许一个接一个提交，防止出现一个节点中 a=3,a=2;  另一个节点出现a=2,a=3 的情况
+     *
+     * @param request
+     * @return
+     */
+    public synchronized Response handlePutClientRequest(Request<Command> request) {
 
-    // 多个客户端同时发送请求，需要同步处理
-    public synchronized Response handleClientRequest(Request<Command> request) {
-        if (status != NodeStatus.LEADER) {
-            return redirect(request);
-        }
-        // 当前节点是 leader
-
-        // 当前请求已经处理过
-        if (respMap.containsKey(request.getId())) {
-            return respMap.get(request.getId());
-        }
-
-        // get 查询请求
-        if (request.getReqObj().getType() == Command.GET) {
-            return handleGetRequest(request);
-        }
-//        System.out.println("currentTerm:" + currentTerm);
-
-        // put 请求
         System.out.println(System.currentTimeMillis() + "-------" + request.getReqObj());
+
         LogEntry entry = new LogEntry(currentTerm, request.getReqObj()); // 日志项的 index 在写入时设置
         // 首先存入 leader 本地
         logModule.write(entry);
@@ -628,7 +658,7 @@ public class NodeServer {
         List<Peer> otherPeers = peerSet.getOtherPeers();
         List<Future<Boolean>> resultList = new ArrayList<>();
 
-        updatePeerSetInfo();
+//        updatePeerSetInfo();
 
         for (Peer p : otherPeers) {
             Future<Boolean> res = threadPool.submit(new Callable<Boolean>() {
@@ -716,6 +746,27 @@ public class NodeServer {
 
             return ClientResp.no("提交失败");
         }
+    }
+
+    // 多个客户端同时发送请求，需要同步处理
+    public Response handleClientRequest(Request<Command> request) {
+        if (status != NodeStatus.LEADER) {
+            return redirect(request);
+        }
+        // 当前节点是 leader
+
+        // 当前请求已经处理过
+        if (respMap.containsKey(request.getId())) {
+            return respMap.get(request.getId());
+        }
+
+        // get 查询请求
+        if (request.getReqObj().getType() == Command.GET) {
+            return handleGetRequest(request);
+        }
+
+        return handlePutClientRequest(request);
+
     }
 
     public boolean sendInstallSnapshotRPC(Peer p) {
@@ -860,99 +911,116 @@ public class NodeServer {
         return false;
     }
 
+    public synchronized Response handleAppendEntry(AppendEntryParam param) {
+        if (param.getTerm() < currentTerm)
+            return AppendEntryResult.no(currentTerm);
+        System.out.println("-----------handleAppendEntry start-----------");
+        System.out.println(param);
 
-    public Response handleAppendEntry(AppendEntryParam param) {
-        lock.lock();
-        try {
-            if (param.getTerm() < currentTerm)
+        prevHeartBeatStamp = System.currentTimeMillis();
+        prevElectionStamp = System.currentTimeMillis();
+        peerSet.setLeader(new Peer(param.getLeaderId()));
+        if (status != NodeStatus.FOLLOWER) {
+            status = NodeStatus.FOLLOWER;
+        }
+        if (currentTerm != param.getTerm()) {
+            currentTerm = param.getTerm();
+        }
+        if (param.getEntries().size() == 0) { // 已经接受到压缩快照，压缩快照后面恰好已经没有日志了
+            return AppendEntryResult.yes(currentTerm);
+        }
+
+        if (logModule.getLastIndex() == -1) {
+            if (param.getPrevLogIndex() != -1) {
                 return AppendEntryResult.no(currentTerm);
-            System.out.println("-----------handleAppendEntry start-----------");
-            System.out.println(param);
-
-            prevHeartBeatStamp = System.currentTimeMillis();
-            prevElectionStamp = System.currentTimeMillis();
-            peerSet.setLeader(new Peer(param.getLeaderId()));
-            if (status != NodeStatus.FOLLOWER) {
-                status = NodeStatus.FOLLOWER;
-            }
-            if (currentTerm != param.getTerm()) {
-                currentTerm = param.getTerm();
-            }
-            if (param.getEntries().size() == 0) { // 已经接受到压缩快照，压缩快照后面恰好已经没有日志了
-                return AppendEntryResult.yes(currentTerm);
-            }
-
-            if (logModule.getLastIndex() == -1) {
-                if (param.getPrevLogIndex() != -1) {
-                    return AppendEntryResult.no(currentTerm);
-                } else {
-                    // 复制:
-                    System.out.println("复制");
-                }
             } else {
-                // !=-1，当前节点有日志
-                if (param.getPrevLogIndex() == -1) {
-                    return AppendEntryResult.no(currentTerm);
-                } else {
-                    LogEntry matchEntry = logModule.read(param.getPrevLogIndex());
-                    System.out.println("matchEntry:" + matchEntry);
-                    if (matchEntry != null) {
-                        if (matchEntry.getTerm() != param.getPrevLogTerm()) {// prevLogIndex 处的任期号 != prevLogTerm
-                            System.out.println("2");
-                            return AppendEntryResult.no(currentTerm); // 返回 false, 让 leader 的 index-1
-                        } else {
-                            // 找到：复制
-                            System.out.println("找到：复制");
-                        }
+                // 复制:
+                System.out.println("复制");
+            }
+        } else {
+            // !=-1，当前节点有日志
+            if (param.getPrevLogIndex() == -1) {
+                return AppendEntryResult.no(currentTerm);
+            } else {
+                LogEntry matchEntry = logModule.read(param.getPrevLogIndex());
+                System.out.println("matchEntry:" + matchEntry);
+                if (matchEntry != null) {
+                    if (matchEntry.getTerm() != param.getPrevLogTerm()) {// prevLogIndex 处的任期号 != prevLogTerm
+                        System.out.println("2");
+                        return AppendEntryResult.no(currentTerm); // 返回 false, 让 leader 的 index-1
                     } else {
-                        System.out.println("3");
-                        // 在当前节点找不到  prevLogIndex
-                        return AppendEntryResult.no(currentTerm);
+                        // 找到：复制
+                        System.out.println("找到：复制");
                     }
+                } else {
+                    System.out.println("3");
+                    // 在当前节点找不到  prevLogIndex
+                    return AppendEntryResult.no(currentTerm);
                 }
             }
+        }
 
-            // 第一次添加日志 或者 prevLog 在当前节点中找到匹配的
-            int i = 0;
+        // 第一次添加日志 或者 prevLog 在当前节点中找到匹配的
+        int i = 0;
 
-            for (; i < param.getEntries().size(); i++) {
-                LogEntry add = param.getEntries().get(i);
-                LogEntry entry = logModule.read(add.getIndex());
-                if (entry != null) {
-                    if (entry.getTerm() != add.getTerm()) {
-                        // 要添加的日志项，和已经存在的日志冲突(index 相同但任期号不同)，删除已经存在的日志和后面的日志
-                        // 删除 existEntry 及之后的日志项
-                        System.out.println("removeIndex:" + add.getIndex());
-                        logModule.removeFromIndex(add.getIndex());
-                        break; // 删除该位置及之后的日志，跳出循环，从 entry(i).getIndex() 处存储日志
-                    }
-                    // == ，不用添加，继续遍历比较下一个日志
-                } else { // entry == null , 说明从 param.getEntries().get(i) 处开始全部添加到当前节点的日志中
-                    break;
+        for (; i < param.getEntries().size(); i++) {
+            LogEntry add = param.getEntries().get(i);
+            LogEntry entry = logModule.read(add.getIndex());
+            if (entry != null) {
+                if (entry.getTerm() != add.getTerm()) {
+                    // 要添加的日志项，和已经存在的日志冲突(index 相同但任期号不同)，删除已经存在的日志和后面的日志
+                    // 删除 existEntry 及之后的日志项
+                    System.out.println("removeIndex:" + add.getIndex());
+                    logModule.removeFromIndex(add.getIndex());
+                    break; // 删除该位置及之后的日志，跳出循环，从 entry(i).getIndex() 处存储日志
                 }
+                // == ，不用添加，继续遍历比较下一个日志
+            } else { // entry == null , 说明从 param.getEntries().get(i) 处开始全部添加到当前节点的日志中
+                break;
             }
+        }
 
-            for (; i < param.getEntries().size(); i++) {
+        for (; i < param.getEntries().size(); i++) {
 //                System.out.println("for: " + param.getEntries().get(i));
-                System.out.println("write " + param.getEntries().get(i));
-                logModule.write(param.getEntries().get(i));
-            }
+            System.out.println("write " + param.getEntries().get(i));
+            logModule.write(param.getEntries().get(i));
+        }
 
-/*            // 更新 leaderCommit
+
+            /*            // 更新 leaderCommit
             if (param.getLeaderCommitIndex() > commitIndex) {
                 commitIndex = Math.min(param.getLeaderCommitIndex(), logModule.getLastIndex());
 //                lastApplied = commitIndex;
             }*/
 //            System.out.println("4");
+        System.out.println("-----------handleAppendEntry over-----------");
+        return AppendEntryResult.yes(currentTerm);
 
-            return AppendEntryResult.yes(currentTerm);
+    }
 
-        } finally {
-            lock.unlock();
-            System.out.println("-----------handleAppendEntry over-----------");
+
+    /**
+     * TODO: 2019/5/14   成员变更
+     * 添加节点，一次只能添加一个节点(synchronized)
+     *
+     * @param request
+     * @return
+     */
+    public synchronized Response handleAddServer(Request<String> request) {
+        if (status != NodeStatus.LEADER) {
+            return redirect(request);
         }
+        // 当前节点是 leader
 
+        // 当前请求已经处理过
+        if (respMap.containsKey(request.getId())) {
+            return respMap.get(request.getId());
+        }
+        List<Peer> otherPeerSet = logModule.getOtherPeerSet();
+        HashSet<Peer> peers = new HashSet<>(otherPeerSet);
+        peers.add(new Peer(request.getReqObj()));
 
+        return null;
     }
 
     public void destroy() {

@@ -1,7 +1,7 @@
 package com.raft.snapshot;
 
 import com.raft.pojo.SnapshotMetadata;
-import com.raft.util.FileUtils;
+import com.raft.util.MFileUtils;
 
 import java.io.File;
 import java.util.LinkedHashMap;
@@ -36,7 +36,7 @@ public class SnapshotImpl implements Snapshot {
         File file = new File(metadataPath);
         // 构造快照文件数据
         SnapshotMetadata metadata = new SnapshotMetadata(lastIncludedIndex, lastIncludedTerm, data);
-        FileUtils.storeSnapshotMetadata(file, metadata);
+        MFileUtils.storeSnapshotMetadata(file, metadata);
     }
 
     @Override
@@ -45,7 +45,7 @@ public class SnapshotImpl implements Snapshot {
         if (!file.exists()) {
             return null;
         }
-        SnapshotMetadata metadata = FileUtils.readSnapshotMetadata(file);
+        SnapshotMetadata metadata = MFileUtils.readSnapshotMetadata(file);
         return metadata;
     }
 }

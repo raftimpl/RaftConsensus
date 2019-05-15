@@ -1,15 +1,41 @@
 package com.raft;
 
+import com.alibaba.fastjson.JSON;
+import com.alibaba.fastjson.JSONArray;
+import com.alibaba.fastjson.JSONObject;
 import com.raft.pojo.*;
 import com.raft.rpc.ManageRPCClient;
 import com.raft.rpc.NodeRPCClient;
+import org.apache.commons.io.FileUtils;
 import org.junit.Test;
+
+import java.io.File;
+import java.io.IOException;
+import java.util.ArrayList;
+import java.util.List;
+import java.util.Random;
 
 /**
  * created by Ethan-Walker on 2019/4/11
  */
 public class Client {
 
+    public String getRandom() {
+        List<Peer> otherPeers = new ArrayList<>();
+        String addr = null;
+        try {
+            String s = FileUtils.readFileToString(new File("./cluster.json"));
+            JSONObject jsonObject = JSON.parseObject(s);
+            JSONArray servers = jsonObject.getJSONArray("servers");
+
+            int index = new Random().nextInt(servers.size());
+            addr = servers.getJSONObject(index).getString("addr");
+
+        } catch (IOException e) {
+            e.printStackTrace();
+        }
+        return addr;
+    }
 
     public Peer getRandomAddr() {
         ManageRPCClient client = new ManageRPCClient();
@@ -32,14 +58,14 @@ public class Client {
     public void testSnapshot() {
         NodeRPCClient rpcClient = new NodeRPCClient();
         Request<Command> request1 = new Request<>();
-        Peer p = getRandomAddr();
+        String p = getRandom();
         System.out.println(p);
 
         Command c1 = new Command("a", "9999", Command.PUT);
         request1.setReqObj(c1);
         request1.setType(Request.RequestType.CLIENT);
         request1.setDesc("发送put请求");
-        request1.setUrl(p.getAddr());
+        request1.setUrl(p);
 
 
         ClientResp resp = (ClientResp) rpcClient.send(request1);
@@ -51,16 +77,16 @@ public class Client {
         NodeRPCClient rpcClient = new NodeRPCClient();
         Request<Command> request1 = new Request<>();
 
-        Command c1 = new Command("a", "1111", Command.PUT);
-        Command c2 = new Command("b", "222", Command.PUT);
-        Command c3 = new Command("c", "333", Command.PUT);
+        Command c1 = new Command("a", "aaa", Command.PUT);
+        Command c2 = new Command("b", "bbb", Command.PUT);
+        Command c3 = new Command("c", "ccc", Command.PUT);
 
-        Peer p = getRandomAddr();
+        String p = getRandom();
         System.out.println(p);
         request1.setReqObj(c1);
         request1.setType(Request.RequestType.CLIENT);
         request1.setDesc("发送put请求");
-        request1.setUrl(p.getAddr());
+        request1.setUrl(p);
         ClientResp resp = (ClientResp) rpcClient.send(request1);
         System.out.println("c1Result: =" + resp);
 
@@ -79,7 +105,7 @@ public class Client {
     public void test2() {
         NodeRPCClient rpcClient = new NodeRPCClient();
         Request<Command> request1 = new Request<>();
-        Peer p = getRandomAddr();
+        String p = getRandom();
         System.out.println(p);
 
         Command c1 = new Command("d", "111", Command.PUT);
@@ -87,7 +113,7 @@ public class Client {
         request1.setReqObj(c1);
         request1.setType(Request.RequestType.CLIENT);
         request1.setDesc("发送put请求");
-        request1.setUrl(p.getAddr());
+        request1.setUrl(p);
         ClientResp resp = (ClientResp) rpcClient.send(request1);
         System.out.println("c1Result: =" + resp);
     }
@@ -96,30 +122,29 @@ public class Client {
     public void test3() {
         NodeRPCClient rpcClient = new NodeRPCClient();
         Request<Command> request1 = new Request<>();
-        Peer p = getRandomAddr();
+        String p = getRandom();
         System.out.println(p);
 
-        Command c1 = new Command("z", "555", Command.PUT);
+        Command c1 = new Command("z", "zzz", Command.PUT);
         request1.setReqObj(c1);
         request1.setType(Request.RequestType.CLIENT);
         request1.setDesc("发送put请求");
-        request1.setUrl(p.getAddr());
+        request1.setUrl(p);
         ClientResp resp = (ClientResp) rpcClient.send(request1);
         System.out.println("c1Result: =" + resp);
-
     }
 
     @Test
     public void test4() {
         NodeRPCClient rpcClient = new NodeRPCClient();
         Request<Command> request1 = new Request<>();
-        Peer p = getRandomAddr();
+        String p = getRandom();
         System.out.println(p);
         Command c1 = new Command("h", "6666", Command.PUT);
         request1.setReqObj(c1);
         request1.setType(Request.RequestType.CLIENT);
         request1.setDesc("发送put请求");
-        request1.setUrl(p.getAddr());
+        request1.setUrl(p);
         ClientResp resp = (ClientResp) rpcClient.send(request1);
         System.out.println("c1Result: =" + resp);
     }

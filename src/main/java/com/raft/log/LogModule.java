@@ -1,6 +1,9 @@
 package com.raft.log;
 
 import com.raft.pojo.LogEntry;
+import com.raft.pojo.Peer;
+
+import java.util.List;
 
 public interface LogModule {
 
@@ -27,4 +30,8 @@ public interface LogModule {
     void updateLastSnapshotIndex(long index);
 
     void updateLastSnapshotTerm(int term);
+
+    List<Peer> getOtherPeerSet();
+
+    void updateOtherPeerSet(List<Peer> otherPeerSet);
 }

@@ -18,7 +18,7 @@ public class NodeRPCClient {
     public Response send(Request request) {
         Response resp = null;
         try {
-            resp = (Response) client.invokeSync(request.getUrl(), request, 20 * 1000);
+            resp = (Response) client.invokeSync(request.getUrl(), request, 10 * 1000);
         } catch (RemotingException e) {
 //            e.printStackTrace();
             System.out.println(request.getUrl() + " 连接失败");

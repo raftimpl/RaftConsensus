@@ -62,6 +62,8 @@ public class Request<T> implements Serializable {
         CLIENT, // 客户端发送来的请求
         QUERY_ENTRY,
         INSTALL_SNAPSHOT,
-        PING
+        PING,
+        ADD_SERVER,
+        REMOVE_SERVER
     }
 }

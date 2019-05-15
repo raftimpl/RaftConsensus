@@ -1,0 +1,19 @@
+{
+  "servers": [
+    {
+      "addr": "localhost:8001"
+    },
+    {
+      "addr": "localhost:8002"
+    },
+    {
+      "addr": "localhost:8003"
+    },
+    {
+      "addr": "localhost:8004"
+    },
+    {
+      "addr": "localhost:8005"
+    }
+  ]
+}

@@ -21,8 +21,7 @@ public class ManageServer {
     private static RocksDB db;
 
     private final String dbDir = "./cluster";
-
-
+    
     private final byte[] PEER_SET = "PEER_INDEX_SET".getBytes();
 
     private ManageRPCServer rpcServer;

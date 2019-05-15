@@ -1,7 +1,9 @@
 package com.raft.log;
 
 import com.alibaba.fastjson.JSON;
+import com.alibaba.fastjson.JSONArray;
 import com.raft.pojo.LogEntry;
+import com.raft.pojo.Peer;
 import com.sun.org.apache.xerces.internal.impl.xs.opti.DefaultNode;
 import org.rocksdb.Options;
 import org.rocksdb.RocksDB;
@@ -10,6 +12,8 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 import java.io.File;
+import java.util.ArrayList;
+import java.util.List;
 import java.util.concurrent.locks.ReentrantLock;
 
 /**
@@ -22,6 +26,7 @@ public class LogModuleImpl implements LogModule {
     private final static byte[] LAST_SNAPSHOT_INDEX = "LAST_SNAPSHOT_INDEX".getBytes();
     private final static byte[] LAST_SNAPSHOT_TERM = "LAST_SNAPSHOT_TERM".getBytes();
 
+    private final static byte[] OTHER_PEER_SET = "OTHER_PEER_SET".getBytes();
     private final static String dbDir;
     private final static String logsDir;
     private static RocksDB rocksDB;
@@ -235,6 +240,28 @@ public class LogModuleImpl implements LogModule {
         for (long i = getLastSnapshotIndex() + 1; i <= lastIndex; i++) {
             LogEntry entry = read(i);
             System.out.println(entry.toString());
+        }
+    }
+
+    @Override
+    public List<Peer> getOtherPeerSet() {
+        List<Peer> peerList = new ArrayList<>();
+        try {
+            byte[] bys = rocksDB.get(OTHER_PEER_SET);
+            if (bys == null) return peerList;
+            peerList = JSON.parseArray(new String(bys), Peer.class);
+        } catch (RocksDBException e) {
+            e.printStackTrace();
+        }
+        return peerList;
+    }
+
+    @Override
+    public void updateOtherPeerSet(List<Peer> otherPeerSet) {
+        try {
+            rocksDB.put(OTHER_PEER_SET, JSONArray.toJSONBytes(otherPeerSet));
+        } catch (RocksDBException e) {
+            e.printStackTrace();
         }
     }
 }

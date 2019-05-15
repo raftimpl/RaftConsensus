@@ -7,7 +7,7 @@ import java.io.*;
 /**
  * created by Ethan-Walker on 2019/5/11
  */
-public class FileUtils {
+public class MFileUtils {
 
     public static void storeSnapshotMetadata(File file, SnapshotMetadata data) {
         try (ObjectOutputStream outputStream = new ObjectOutputStream(new FileOutputStream(file))) {

@@ -10,14 +10,11 @@ public class BootstrapMain {
 
     public static void main(String[] args) {
 
-        String managerServer = "localhost:8889";
-
         String curNodePort = System.getProperty("serverPort");
         int port = Integer.parseInt(curNodePort);
 
         NodeServer server = new NodeServer();
-
-        server.init("localhost:" + port, port, managerServer);
+        server.init("localhost:" + port, port);
 
         Runtime.getRuntime().addShutdownHook(new Thread() {
             @Override
@@ -25,7 +22,6 @@ public class BootstrapMain {
                 server.destroy();
             }
         });
-
 
 
     }
