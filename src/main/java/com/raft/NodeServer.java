@@ -963,11 +963,8 @@ public class NodeServer {
         }
 
         // 第一次添加日志 或者 prevLog 在当前节点中找到匹配的
-        int i = 0;
 
-//      这会导致未被确认提交的日志log，index 和 term 和新提交的日志项相同，导致日志log没有被覆盖
-/*
-        for (; i < param.getEntries().size(); i++) {
+        for (int i = 0; i < param.getEntries().size(); i++) {
             LogEntry add = param.getEntries().get(i);
             LogEntry entry = logModule.read(add.getIndex());
             if (entry != null) {
@@ -983,9 +980,8 @@ public class NodeServer {
                 break;
             }
         }
-*/
 
-        for (; i < param.getEntries().size(); i++) {
+        for (int i = 0; i < param.getEntries().size(); i++) {
 //                System.out.println("for: " + param.getEntries().get(i));
             System.out.println("write " + param.getEntries().get(i));
             logModule.update(param.getEntries().get(i));
