@@ -29,11 +29,11 @@ public class Client2 {
      */
     @Test
     public void test3() {
-        System.out.println(RaftClient.getKey("a"));
-        System.out.println(RaftClient.getKey("b"));
-        System.out.println(RaftClient.getKey("c"));
-        System.out.println(RaftClient.getKey("d"));
-        System.out.println(RaftClient.getKey("z"));
+//        System.out.println(RaftClient.getKey("a"));
+//        System.out.println(RaftClient.getKey("b"));
+//        System.out.println(RaftClient.getKey("c"));
+//        System.out.println(RaftClient.getKey("d"));
+//        System.out.println(RaftClient.getKey("z"));
     }
 
 }
