@@ -1,26 +1,10 @@
 package com.raft;
 
-import com.alibaba.fastjson.JSON;
-import com.alibaba.fastjson.JSONArray;
-import com.alibaba.fastjson.JSONObject;
-import com.raft.pojo.*;
-import com.raft.rpc.ManageRPCClient;
-import com.raft.rpc.NodeRPCClient;
-import org.apache.commons.io.FileUtils;
-import org.junit.Test;
-
-import java.io.File;
-import java.io.IOException;
-import java.util.ArrayList;
-import java.util.List;
-import java.util.Random;
-
 /**
  * created by Ethan-Walker on 2019/4/11
  */
 public class Client {
-
-    public String getRandom() {
+ /*   public String getRandom() {
         List<Peer> otherPeers = new ArrayList<>();
         String addr = null;
         try {
@@ -53,8 +37,7 @@ public class Client {
         }
         return p;
     }
-
-    @Test
+  @Test
     public void testSnapshot() {
         NodeRPCClient rpcClient = new NodeRPCClient();
         Request<Command> request1 = new Request<>();
@@ -71,6 +54,7 @@ public class Client {
         ClientResp resp = (ClientResp) rpcClient.send(request1);
 
     }
+
 
     @Test
     public void test() {
@@ -148,6 +132,6 @@ public class Client {
         ClientResp resp = (ClientResp) rpcClient.send(request1);
         System.out.println("c1Result: =" + resp);
     }
-
+*/
 }
 
