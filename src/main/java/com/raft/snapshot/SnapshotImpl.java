@@ -2,6 +2,8 @@ package com.raft.snapshot;
 
 import com.raft.pojo.SnapshotMetadata;
 import com.raft.util.MFileUtils;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
 import java.io.File;
 import java.util.LinkedHashMap;
@@ -10,7 +12,7 @@ import java.util.LinkedHashMap;
  * created by Ethan-Walker on 2019/5/10
  */
 public class SnapshotImpl implements Snapshot {
-
+    private static final Logger LOG = LoggerFactory.getLogger(SnapshotImpl.class);
     private static final String dbDir;
     private static final String snapshotDir;
     private static final String metadataPath;
