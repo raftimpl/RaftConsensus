@@ -16,7 +16,7 @@ import java.util.LinkedHashMap;
 import java.util.concurrent.locks.ReentrantLock;
 
 public class StateMachineImpl implements StateMachine {
-    private static final Logger LOGGER = LoggerFactory.getLogger(DefaultNode.class);
+    private static final Logger LOG = LoggerFactory.getLogger(DefaultNode.class);
     private static final byte[] LAST_APPLIED = "LAST_APPLIED".getBytes();
 
     private static String dbDir;
@@ -122,17 +122,20 @@ public class StateMachineImpl implements StateMachine {
     }
 
     @Override
-    public void print() {
+    public void printAll() {
         RocksIterator rocksIterator = rocksDB.newIterator();
         rocksIterator.seekToFirst();
         if (!rocksIterator.isValid()) {
             return;
         }
-        System.out.println("---------状态机---------");
+        System.out.println("状态机: ");
         while (rocksIterator.isValid()) {
             byte[] key = rocksIterator.key();
             byte[] value = rocksIterator.value();
-            System.out.println(new String(key) + "=" + new String(value));
+            String s = new String(key);
+            if (!"LAST_APPLIED".equals(s)) {
+                System.out.println(new String(key) + "=" + new String(value));
+            }
             rocksIterator.next();
         }
     }
@@ -162,7 +165,10 @@ public class StateMachineImpl implements StateMachine {
         while (rocksIterator.isValid()) {
             byte[] key = rocksIterator.key();
             byte[] value = rocksIterator.value();
-            data.put(new String(key), new String(value));
+            String s = new String(key);
+            if (!"LAST_APPLIED".equals(s)) {
+                data.put(s, new String(value));
+            }
             rocksIterator.next();
         }
         return data;

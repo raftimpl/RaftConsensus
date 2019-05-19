@@ -4,7 +4,6 @@ import com.alibaba.fastjson.JSON;
 import com.alibaba.fastjson.JSONArray;
 import com.raft.pojo.LogEntry;
 import com.raft.pojo.Peer;
-import com.sun.org.apache.xerces.internal.impl.xs.opti.DefaultNode;
 import org.rocksdb.Options;
 import org.rocksdb.RocksDB;
 import org.rocksdb.RocksDBException;
@@ -20,8 +19,7 @@ import java.util.concurrent.locks.ReentrantLock;
  * created by Ethan-Walker on 2019/4/9
  */
 public class LogModuleImpl implements LogModule {
-    private static final Logger LOGGER = LoggerFactory.getLogger(DefaultNode.class);
-
+    private static final Logger LOG = LoggerFactory.getLogger(LogModuleImpl.class);
     private final static byte[] LAST_INDEX_KEY = "LAST_INDEX_KEY".getBytes();
     private final static byte[] LAST_SNAPSHOT_INDEX = "LAST_SNAPSHOT_INDEX".getBytes();
     private final static byte[] LAST_SNAPSHOT_TERM = "LAST_SNAPSHOT_TERM".getBytes();
@@ -75,7 +73,7 @@ public class LogModuleImpl implements LogModule {
 //        System.out.println("--------write-over----------------");
     }
 
-    public void update(LogEntry entry){
+    public void update(LogEntry entry) {
         lock.lock();
 //        System.out.println("-----------to write: " + entry + "------------");
         try {
@@ -251,7 +249,7 @@ public class LogModuleImpl implements LogModule {
         if (lastIndex <= -1)
             return;
         // 没有就不输出
-        System.out.println("---------日志:lastSnapshotIndex= " + getLastSnapshotIndex() + ",lastSnapshotTerm=" + getLastSnapshotTerm() + ", lastIndex = " + lastIndex + "--------");
+        System.out.println("日志:  lastSnapshotIndex = " + getLastSnapshotIndex() + ", lastSnapshotTerm = " + getLastSnapshotTerm() + ", lastIndex = " + lastIndex);
         for (long i = getLastSnapshotIndex() + 1; i <= lastIndex; i++) {
             LogEntry entry = read(i);
             System.out.println(entry.toString());

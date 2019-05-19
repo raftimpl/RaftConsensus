@@ -1,9 +1,20 @@
 package com.raft;
 
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+
 /**
  * created by Ethan-Walker on 2019/4/11
  */
 public class Client {
+    static Logger logger1 = LoggerFactory.getLogger(Client.class);
+    public static void main(String[] args) {
+        logger1.trace("111");
+        logger1.debug("222");
+        logger1.info("333");
+        logger1.warn("444");
+        logger1.error("555");
+    }
  /*   public String getRandom() {
         List<Peer> otherPeers = new ArrayList<>();
         String addr = null;

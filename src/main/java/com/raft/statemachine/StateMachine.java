@@ -23,7 +23,7 @@ public interface StateMachine {
     //删除多个key对应的value
     void delValue(String... key);
 
-    void print();
+    void printAll();
 
     long getLastApplied();
 
