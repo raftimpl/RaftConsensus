@@ -3,7 +3,6 @@ package com.raft;
 import com.alibaba.fastjson.JSON;
 import com.alibaba.fastjson.JSONArray;
 import com.alibaba.fastjson.JSONObject;
-import com.alipay.remoting.InvokeCallback;
 import com.raft.log.LogModule;
 import com.raft.log.LogModuleImpl;
 import com.raft.pojo.*;
@@ -514,6 +513,7 @@ public class NodeServer {
                     lastApplied = i;
                     // 可能一次apply多条日志，可能中间有一条日志恰到达
                     trySnapshot();
+                    dataChanged = true;
                 }
             }
         } finally {
@@ -640,7 +640,7 @@ public class NodeServer {
      */
     public synchronized Response handlePutClientRequest(Request<Command> request) {
 
-        System.out.println("handlePutClientRequest: " + request.getReqObj());
+        System.out.println("\nhandlePutClientRequest: " + request.getReqObj());
         LogEntry entry = new LogEntry(currentTerm, request.getReqObj()); // 日志项的 index 在写入时设置
         // 首先存入 leader 本地
         logModule.write(entry);
@@ -693,7 +693,7 @@ public class NodeServer {
         if (countYes.get() > peerSet.getSet().size() / 2) {
             // 认为复制成功
             commitIndex = entry.getIndex();
-            dataChanged = true;
+
             //提交到状态机
             LogEntry newLogEntry;
             if (lastApplied < commitIndex) LOG.trace("提交状态机");
@@ -706,6 +706,7 @@ public class NodeServer {
 //            stateMachine.printAll();
             LOG.trace("last Applied=" + lastApplied);
             trySnapshot();
+            dataChanged = true;
             return ClientResp.yes(true);
         } else {
             // 复制失败,同时删除 leader 下的此日志之后的所有日志
@@ -730,9 +731,7 @@ public class NodeServer {
                 stateMachine.apply(newLogEntry);
             }
             lastApplied = commitIndex;
-
             trySnapshot();
-
             return ClientResp.no(false);
         }
     }
@@ -976,7 +975,6 @@ public class NodeServer {
             logModule.update(param.getEntries().get(i));
         }
 //        printData();
-        dataChanged = true;
         return AppendEntryResult.yes(currentTerm);
 
     }
